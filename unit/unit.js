@@ -256,7 +256,7 @@
         ring[j] = [ring[j][0] * (1 + pad / d), ring[j][1] * (1 + pad / d)];
       }
       edge.push(ringPath(ring));
-      flatPaint.push(paintName(shade(0.8, 0.125, flat[g])));
+      flatPaint.push(paintName(shade(0.78, 0.15, flat[g])));
       edgePaint.push(paintName(shade(0.9, 0.09, flat[g])));
     }
 
@@ -295,13 +295,13 @@
   var now = 0;                                       // seconds of visible running time
   var u = 0, e = 0;                                  // how far toward each end of the slider
   var X, Y, light, tile, open, grow, scale, paint, bucket, w, wAlpha, mul;
-  var glowSprite = [];
+  var glowSprite = [], bloomSprite = null;
   var paintStale = true, weightStale = true;
 
   function makeSprites() {
     for (var b = 0; b < 36; b++) {
       var c = document.createElement('canvas'); c.width = c.height = 64;
-      var g = c.getContext('2d'), col = shade(0.8, 0.125, b * 10);
+      var g = c.getContext('2d'), col = shade(0.78, 0.15, b * 10);
       var grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
       var rgb = col[0] + ',' + col[1] + ',' + col[2];
       grad.addColorStop(0, 'rgba(' + rgb + ',0.6)');
@@ -311,6 +311,13 @@
       g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
       glowSprite.push(c);
     }
+    bloomSprite = document.createElement('canvas'); bloomSprite.width = bloomSprite.height = 96;
+    var bg = bloomSprite.getContext('2d'), bgrad = bg.createRadialGradient(48, 48, 0, 48, 48, 48);
+    bgrad.addColorStop(0, 'rgba(255,255,255,0.85)');
+    bgrad.addColorStop(0.12, 'rgba(255,255,255,0.38)');
+    bgrad.addColorStop(0.4, 'rgba(255,255,255,0.09)');
+    bgrad.addColorStop(1, 'rgba(255,255,255,0)');
+    bg.fillStyle = bgrad; bg.fillRect(0, 0, 96, 96);
   }
 
   function layout() {
@@ -328,10 +335,14 @@
     w = new Float32Array(net.ln); wAlpha = new Uint8Array(net.ln);
     mul = new Float32Array(net.sit[0]);
     paintStale = weightStale = true;
+    touches.length = 0; lastDot = -1;
   }
 
   // Where the field has to stop so the controls stay clear of it.
-  function fieldFloor() { return vh; }
+  function fieldFloor() {
+    var box = document.getElementById('panel').getBoundingClientRect();
+    return box.top > 0 ? box.top : vh;
+  }
 
   /* ---------- link weights ---------- */
 
@@ -346,13 +357,129 @@
     weightStale = false;
   }
 
+  /* ---------- touch ---------- */
+
+  var touches = [];        // each: where it started, when, and how far it got
+  var lastDot = -1;        // the visitor's last touch, kept for replays
+  var walkAt = 0;
+
+  // How bright a lit dot is, tau seconds after the light reaches it.
+  function glow(tau) {
+    if (tau <= 0) return 0;
+    if (tau < 0.12) return smooth(tau / 0.12);
+    var x = (tau - 0.12) / 2.1;
+    return x >= 1 ? 0 : (1 - x) * (1 - x);
+  }
+
+  // Work out where one touch reaches. The touch has a fixed amount of light.
+  // Each lit dot hands what it has to the dots beyond it, shared out by link
+  // strength, so the more ways it branches the dimmer each branch.
+  function spread(T) {
+    var n = net.n, en = T.en, dep = T.dep, i, j, a, f, v, sum, out, part;
+    for (i = 0; i < n; i++) { en[i] = 0; dep[i] = -1; }
+    var keep = lerp(lerp(0.82, 0.97, e), 1, u);       // what survives each step
+    var least = lerp(0.01, 0.003, e);                 // below this, light is gone
+    var drag = 0.2 * (1 - e) * (1 - u);
+    var front = [T.dot], d = 0;
+    en[T.dot] = 1; dep[T.dot] = 0;
+    while (front.length && d < 48) {
+      var next = [];
+      for (f = 0; f < front.length; f++) {
+        i = front[f];
+        if (en[i] < least) continue;
+        sum = 0;
+        for (a = net.start[i]; a < net.start[i + 1]; a++) {
+          j = net.viaDot[a];
+          if (dep[j] < 0 || dep[j] === d + 1) { v = w[net.viaLink[a]]; sum += v * v; }
+        }
+        if (sum < 1e-6) continue;
+        out = en[i] * keep * sum / (sum + drag);
+        for (a = net.start[i]; a < net.start[i + 1]; a++) {
+          j = net.viaDot[a];
+          if (dep[j] >= 0 && dep[j] !== d + 1) continue;
+          v = w[net.viaLink[a]];
+          part = out * v * v / sum;
+          if (dep[j] < 0) {
+            if (part < least * 0.5) continue;
+            dep[j] = d + 1; next.push(j);
+          }
+          en[j] += part;
+        }
+      }
+      front = next; d++;
+    }
+
+    // Turn that into what is shown. Toward the left end the touched group
+    // takes over: all of it, evenly, at once, and nothing outside it.
+    var pace = clamp(0.8 / Math.max(1, d), 0.035, 0.13) * Math.pow(1 - u, 1.5);
+    if (calm) pace = 0;
+    var home = net.grp[T.dot], cap = 1 - 0.45 * e;
+    T.far = 0;
+    for (i = 0; i < n; i++) {
+      var seen = dep[i] >= 0 ? Math.min(cap, 1.15 * Math.sqrt(en[i])) : 0;
+      if (seen < 0.04) seen = 0;
+      T.show[i] = lerp(seen, net.grp[i] === home ? 1 : 0, u);
+      T.due[i] = (dep[i] >= 0 ? dep[i] : d) * pace;
+      if (T.show[i] > 0 && T.due[i] > T.far) T.far = T.due[i];
+    }
+  }
+
+  function touchDot(i) {
+    var T = {
+      dot: i, at: now, far: 0,
+      en: new Float32Array(net.n), dep: new Int16Array(net.n),
+      show: new Float32Array(net.n), due: new Float32Array(net.n)
+    };
+    if (weightStale) weigh();
+    spread(T);
+    touches.push(T);
+    if (touches.length > 4) touches.shift();
+    lastDot = i;
+  }
+
+  function nearest(px, py) {
+    var best = Infinity, at = -1, d;
+    for (var i = 0; i < net.n; i++) {
+      d = (X[i] - px) * (X[i] - px) + (Y[i] - py) * (Y[i] - py);
+      if (d < best) { best = d; at = i; }
+    }
+    return at;
+  }
+
+  function tap(i) { touchDot(i); }
+
+  function shine() {
+    var n = net.n, i, t, T, age, tau;
+    for (i = 0; i < n; i++) light[i] = 0;
+    for (t = touches.length - 1; t >= 0; t--) {
+      T = touches[t]; age = now - T.at;
+      if (age > T.far + 2.4) { touches.splice(t, 1); continue; }
+      for (i = 0; i < n; i++) {
+        if (T.show[i] <= 0) continue;
+        tau = age - T.due[i];
+        if (tau > 0) light[i] += T.show[i] * glow(tau);
+      }
+    }
+  }
+
+  canvas.addEventListener('pointerdown', function (ev) {
+    if (!net || ev.button > 0) return;
+    var box = canvas.getBoundingClientRect();
+    tap(nearest(ev.clientX - box.left, ev.clientY - box.top));
+  });
+
+  var touchBtn = document.getElementById('touch');
+  touchBtn.addEventListener('click', function () {
+    tap(net.walk[walkAt++ % net.walk.length]);
+  });
+
   /* ---------- drawing ---------- */
 
   function tint() {
     for (var i = 0; i < net.n; i++) {
       var g = net.grp[i], ue = u * (1 - open[g]);
       var h = (net.hue[i] + arc(net.hue[i], net.flat[g]) * ue + 360) % 360;
-      paint[i] = paintName(shade(0.8, 0.125, h));
+      paint[i] = paintName(shade(0.78, 0.15, h));
       bucket[i] = Math.round(h / 10) % 36;
     }
     paintStale = false;
@@ -422,8 +549,8 @@
     }
     ctx.strokeStyle = 'rgb(240,244,255)';
     for (b = 1; b <= levels; b++) {
-      ctx.globalAlpha = b / levels * 0.7;
-      ctx.lineWidth = 0.8 + 1.3 * b / levels;
+      ctx.globalAlpha = b / levels * 0.8;
+      ctx.lineWidth = 0.8 + 1.8 * b / levels;
       ctx.beginPath();
       for (l = 0; l < net.ln; l++) if (wAlpha[l] === b) {
         ctx.moveTo(X[net.A[l]], Y[net.A[l]]); ctx.lineTo(X[net.B[l]], Y[net.B[l]]);
@@ -438,9 +565,14 @@
       var fade = 1 - 0.8 * u * (1 - open[g]);
       b = Math.min(1, light[i]);
       var r = net.rad[i] * (1 + 0.9 * grow[i]);
-      var hs = r * (7 + 11 * b);
+      var hs = r * (7 + 16 * b);
       ctx.globalAlpha = Math.min(1, (0.2 + 0.8 * b) * fade);
       ctx.drawImage(glowSprite[bucket[i]], X[i] - hs, Y[i] - hs, hs * 2, hs * 2);
+      if (b > 0.02) {
+        hs = r * (5 + 13 * b);
+        ctx.globalAlpha = b * fade;
+        ctx.drawImage(bloomSprite, X[i] - hs, Y[i] - hs, hs * 2, hs * 2);
+      }
       ctx.globalAlpha = fade;
       ctx.fillStyle = paint[i];
       ctx.beginPath(); ctx.arc(X[i], Y[i], r, 0, TAU); ctx.fill();
@@ -476,7 +608,11 @@
   var raf = 0, last = 0;
 
   function step(dt) {
-    if (weightStale) weigh();
+    if (weightStale) {
+      weigh();
+      for (var t = 0; t < touches.length; t++) spread(touches[t]);
+    }
+    shine();
   }
 
   function frame(ms) {
