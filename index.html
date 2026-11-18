@@ -2,62 +2,54 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Unit Resolution</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="unit/unit.css">
 </head>
 <body>
 
-<div id="stage-wrap" aria-hidden="false">
-  <canvas id="field" aria-label="A field of points that clusters, hardens and reopens as you scroll."></canvas>
-  <div id="overlay"></div>
-</div>
-
-<div class="draft-mark">Working draft · November 2026</div>
-
-<nav id="map" aria-label="Stages">
-  <button id="map-toggle" aria-expanded="false" aria-controls="map-list">Stages</button>
-  <ol id="map-list"></ol>
-</nav>
-
-<div id="dock" hidden>
-  <div class="dock-row" id="melt-wrap" hidden>
-    <label for="melt">Melting point</label>
-    <span class="end">stays open</span>
-    <input id="melt" type="range" min="0" max="100" value="55" aria-describedby="melt-desc">
-    <span class="end">sets fast</span>
-    <span id="melt-desc" class="sr">Lower keeps units open. Higher sets them fast.</span>
+<section id="hook">
+  <p id="hook-line" aria-live="polite">Which one is darker?</p>
+  <div id="stage">
+    <div id="ground"><div id="flat"></div></div>
+    <div class="patch" id="patch-a"></div>
+    <div class="patch" id="patch-b"></div>
   </div>
-  <div class="dock-row readout" id="readout" aria-live="polite"></div>
-</div>
-
-<main id="text">
-  <header class="stage hero" data-stage="raw" data-act="I" data-title="Raw material">
-    <p class="kicker">A working model of how minds resolve raw experience into units of meaning.</p>
-    <h1>Unit Resolution</h1>
-    <p class="sub"><em>Minds differ in how readily meaning sets. The shared world, including its explanations of difference, is built for minds where it sets fast.</em></p>
-    <p class="body">Nobody takes in the world raw. Unsorted experience is useless by itself.</p>
-    <p class="hint">Move through the points. Then scroll.</p>
-  </header>
-</main>
-
-<section id="edges" class="plain">
-  <h2>Open edges</h2>
-  <p>What isn’t settled:</p>
-  <ul>
-    <li>Whether clusters need to nest for the picture to hold.</li>
-    <li>Whether there are two layers: an underlying way of sorting that stays, and an adjustable setting on top that moves.</li>
-    <li>Whether some overlap between labeled groups is one shared trait while some is collision.</li>
-    <li>How to tell a real pattern from an imposed one. Working test: did it start from raw instances and can it be walked back down to them, or did it start from a conclusion and collect what fit?</li>
-  </ul>
-  <p class="closing"><em>Each is the other’s clock.</em></p>
-  <p class="draft-foot">Working draft · November 2026</p>
+  <div id="hook-foot">
+    <div id="hook-before">
+      <p id="hook-hint">Drag one onto the other.</p>
+      <button id="together" type="button">Bring them together</button>
+    </div>
+    <div id="hook-after">
+      <p id="hook-close">It took the shortest route to an answer. Usually that works.</p>
+      <button id="see" type="button">See how</button>
+    </div>
+  </div>
 </section>
 
-<script type="module" src="main.js"></script>
+<section id="field" hidden>
+  <canvas id="net"></canvas>
+  <p id="intro"><span>This is a picture of what your mind just did.</span> <span>Each dot is one small detail you know.</span> <span>Lines join details that go together.</span></p>
+  <div id="panel">
+    <div id="guide">
+      <p id="say" aria-live="polite"></p>
+      <button id="skip" type="button">Skip</button>
+    </div>
+    <div id="controls">
+      <button id="touch" type="button">Touch</button>
+      <div id="dial">
+        <input id="slider" type="range" min="0" max="1000" step="20" value="500" aria-labelledby="mark-a mark-c">
+        <div id="marks" aria-hidden="true">
+          <span id="mark-a">Tight</span>
+          <span id="mark-c">Loose</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="unit/unit.js"></script>
 </body>
 </html>

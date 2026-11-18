@@ -1,7 +1,6 @@
 # The talk picture: notes on a rough sketch
 
-A sketch to react to, with one polish pass. Checked in headless Chromium; open `talk/index.html` from disk.
-Screenshots for each guide step are in `shots/`. No console errors, no requests beyond the three page files.
+A sketch to react to, with one polish pass. Checked in headless Chromium; open `talk/index.html` from disk. Screenshots for each guide step are in `shots/`. No console errors, no requests beyond the three page files.
 
 ## What works
 - Two fields, side by side (stacked under 760 px), built from the same seed at the same size: same dots, places and hues.

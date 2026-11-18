@@ -1,5 +1,12 @@
 # The unit picture: notes
 
+Published addresses:
+- Home (this picture): https://sudo-scientist.github.io/unit-resolution/
+- The talk sketch: https://sudo-scientist.github.io/unit-resolution/talk/
+- The earlier page, unchanged: https://sudo-scientist.github.io/unit-resolution/old/
+
+The home page is the root `index.html`, a copy of `unit/index.html` that loads `unit/unit.css` and `unit/unit.js`. Change both together. The scripts in `tools/` still point at the earlier page's old place.
+
 Second pass. Checked in headless Chromium (already on this machine; nothing installed into the repo).
 Open `unit/index.html` straight from disk. Screenshots are in `shots/`.
 
