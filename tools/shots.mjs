@@ -17,6 +17,9 @@ for (const [name, viewport] of Object.entries(sizes)) {
   for (const [i, id] of ids.entries()) {
     if (only && !only.includes(id.slice(2))) continue;
     await page.evaluate(id => { const e = document.getElementById(id); const top = e.getBoundingClientRect().top + scrollY; const off = innerWidth <= 820 ? innerHeight * 0.5 : (innerHeight - Math.min(e.offsetHeight, innerHeight)) / 2 ; scrollTo(0, id === "s-raw" ? 0 : top - (innerWidth <= 820 ? off - 20 : -(e.offsetHeight - innerHeight) / 2)); }, id);
+    await page.waitForTimeout(1200);
+    if (process.env.CLICK) for (let k = 0; k < +(process.env.CLICKN || 1); k++) { await page.click(process.env.CLICK); await page.waitForTimeout(+(process.env.CLICKGAP || 500)); }
+    if (process.env.EVAL) await page.evaluate(process.env.EVAL);
     await page.waitForTimeout(wait);
     await page.screenshot({ path: `shots/${name}${reduced ? "-rm" : ""}-${String(i + 1).padStart(2, "0")}-${id.slice(2)}.png` });
   }

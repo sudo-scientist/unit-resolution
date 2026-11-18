@@ -45,7 +45,7 @@ export class Field {
     this.W = b.width; this.H = b.height; this.phone = innerWidth <= 820;
     this.cv.width = this.W * d; this.cv.height = this.H * d; this.ctx.setTransform(d, 0, 0, d, 0, 0);
     const x0 = this.phone ? 12 : Math.min(this.W * 0.05, 80) + 440;
-    this.R = this.phone ? { x: 12, y: 36, w: this.W - 24, h: this.H - 48 } : { x: x0, y: 80, w: this.W - x0 - 40, h: this.H - 200 };
+    this.R = this.phone ? { x: 12, y: 58, w: this.W - 24, h: this.H - 84 } : { x: x0, y: 80, w: this.W - x0 - 40, h: this.H - 250 };
     this.R.cx = this.R.x + this.R.w / 2; this.R.cy = this.R.y + this.R.h / 2; this.R.s = Math.min(this.R.w, this.R.h);
   }
 
@@ -121,7 +121,7 @@ export class Field {
       if (c) {
         const soft = 1 - c.hard, wob = 1 + soft * 0.5 * Math.sin(t * 0.5 + p.ph) * (calm ? 0.3 : 1);
         const sc = c.r * 0.92 * wob * (1 - 0.9 * c.col);
-        const tx = c.x + p.ox * sc, ty = c.y + p.oy * sc, k = lerp(0.006, 0.07, c.hard);
+        const tx = c.x + p.ox * sc * (c.sx ?? 1), ty = c.y + p.oy * sc, k = lerp(0.006, 0.07, c.hard);
         p.vx += (tx - p.x) * k * f; p.vy += (ty - p.y) * k * f;
         p.vx += (rnd(p.i, Math.floor(t * 3)) - 0.5) * soft * 0.5 * jit; p.vy += (rnd(p.i + 9, Math.floor(t * 3)) - 0.5) * soft * 0.5 * jit;
       } else {
@@ -141,13 +141,14 @@ export class Field {
     const g = this.ctx, t = this.t; g.beginPath();
     for (let s = 0; s <= 56; s++) {
       const a = s / 56 * 6.2832, r = (c.r + 7) * (1 - 0.5 * c.col) * (1 + wobble * (0.05 * Math.sin(3 * a + t * 0.9 + c.k) + 0.035 * Math.sin(5 * a - t * 0.6 + c.k * 2)));
-      const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r; s ? g.lineTo(x, y) : g.moveTo(x, y);
+      const x = c.x + Math.cos(a) * r * (c.sx ?? 1), y = c.y + Math.sin(a) * r; s ? g.lineTo(x, y) : g.moveTo(x, y);
     }
     g.closePath(); g.strokeStyle = rgba(color, alpha); g.lineWidth = width; g.stroke();
   }
 
   draw() {
     const g = this.ctx; this.frames++; g.clearRect(0, 0, this.W, this.H);
+    const cam = this.cam; if (cam) { g.save(); g.translate(this.W / 2, this.H / 2); g.scale(cam.k, cam.k); g.translate(-cam.x, -cam.y); }
     this.scene?.under?.(this, g, this.st);
     for (const md of this.minds) { g.beginPath(); g.arc(md.x, md.y, md.r, 0, 6.2832); g.strokeStyle = rgba(PALE, md.a ?? 0.1); g.lineWidth = 1; g.setLineDash([2, 6]); g.stroke(); g.setLineDash([]); if (md.fill) { g.fillStyle = rgba(PALE, 0.02); g.fill(); } }
     g.globalCompositeOperation = "lighter";
@@ -160,21 +161,22 @@ export class Field {
     }
     for (const c of this.clusters) {
       if (c.mem < 0.02 || c.hidden) continue;
-      const col = c.color || mix(WARM, COOL, smooth(0.35, 0.8, c.hard)), a = lerp(0.16, 0.85, c.hard) * c.mem + c.flash * 0.5;
+      const col = c.color || mix(WARM, COOL, smooth(0.35, 0.8, c.hard)), a = (lerp(0.16, 0.85, c.hard) * c.mem + c.flash * 0.5) * (c.vis ?? 1);
       if (c.hard > 0.5 || c.flash > 0.05) { g.shadowColor = rgba(col, 0.9); g.shadowBlur = 10 * c.hard + 18 * c.flash; }
       this.membrane(c, col, a, lerp(0.7, 2.1, c.hard) + c.flash * 2, 1 - c.hard); g.shadowBlur = 0;
     }
     for (const p of this.points) {
-      const c = p.c >= 0 ? this.clusters[p.c] : null, a = p.al * (c ? 1 - c.col * 0.97 : 1) * (c?.hidden ? 0 : 1); if (a < 0.02 && p.lit < 0.02) continue;
-      const s = (5 + p.lit * 10) * p.size; g.globalAlpha = clamp(a * 0.85 + p.lit);
+      const c = p.c >= 0 ? this.clusters[p.c] : null, a = p.al * (c ? (1 - c.col * 0.97) * (c.vis ?? 1) : 1) * (c?.hidden ? 0 : 1); if (a < 0.02 && p.lit < 0.02) continue;
+      const s = (5 + p.lit * 10) * p.size; g.globalAlpha = clamp(a * 0.85 + p.lit * (c ? c.vis ?? 1 : 1));
       g.drawImage(this.spr[p.kind], p.x - s, p.y - s, s * 2, s * 2);
     }
     for (const c of this.clusters) {
       if (c.col < 0.03 || c.hidden) continue; const s = (10 + Math.sqrt(c.members.length) * 1.7) * c.col * (1 + c.flash * 0.3);
-      g.globalAlpha = clamp(c.col * 1.1); g.drawImage(this.spr[c.sprite || "cool"], c.x - s * 1.6, c.y - s * 1.6, s * 3.2, s * 3.2);
+      g.globalAlpha = clamp(c.col * 1.1) * (c.vis ?? 1); g.drawImage(this.spr[c.sprite || "cool"], c.x - s * 1.6, c.y - s * 1.6, s * 3.2, s * 3.2);
     }
     g.globalAlpha = 1; g.globalCompositeOperation = "source-over";
     this.scene?.draw?.(this, g, this.st);
+    if (cam) g.restore();
     for (const el of this.tags.values()) if (el._seen !== this.frames) el.style.opacity = 0;
   }
 }

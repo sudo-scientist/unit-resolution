@@ -49,14 +49,14 @@ function buildControls(s) {
       values[s.id][c.id] = c.value / 100;
       const box = el("div", "ctl"), lab = el("label", "", c.label); lab.htmlFor = cid;
       const inp = el("input", c.id.startsWith("melt") ? "" : "neutral"); inp.type = "range"; inp.min = 0; inp.max = 100; inp.value = c.value; inp.id = cid;
-      inp.addEventListener("input", () => { values[s.id][c.id] = inp.value / 100; fire("change", c.id, inp.value / 100); });
+      inp.addEventListener("input", () => { values[s.id][c.id] = inp.value / 100; fire("change", c.id, inp.value / 100, s); });
       box.append(lab, inp, el("div", "ends", `<span>${c.ends[0]}</span><span>${c.ends[1]}</span>`)); wrap.append(box);
     } else {
       const b = el("button", "", c.label); b.type = "button"; b.id = cid;
       if (c.type === "toggle") {
         values[s.id][c.id] = false; b.setAttribute("aria-pressed", "false");
-        b.addEventListener("click", () => { const v = !values[s.id][c.id]; values[s.id][c.id] = v; b.setAttribute("aria-pressed", v); fire("change", c.id, v); });
-      } else b.addEventListener("click", () => fire("button", c.id));
+        b.addEventListener("click", () => { const v = !values[s.id][c.id]; values[s.id][c.id] = v; b.setAttribute("aria-pressed", v); fire("change", c.id, v, s); });
+      } else b.addEventListener("click", () => fire("button", c.id, undefined, s));
       btns.append(b);
     }
   }
@@ -64,9 +64,8 @@ function buildControls(s) {
   return wrap;
 }
 
-function fire(kind, id, v) {
-  const s = STAGES[current]; if (!s) return;
-  // a control can be used before its stage is the active one (keyboard users)
+function fire(kind, id, v, s) {
+  const n = STAGES.indexOf(s); if (n !== current) go(n);   // a control always drives its own stage
   field.scene?.[kind]?.(field, id, v, api); field.kick();
 }
 
@@ -86,8 +85,11 @@ addEventListener("keydown", e => { if (e.key === "Escape") { map.classList.remov
 // ---------- which stage is active ----------
 const sections = STAGES.map(s => $(`#s-${s.id}`));
 function pick() {
-  const line = field.phone ? innerHeight * 0.78 : innerHeight * 0.62;
-  let n = 0; sections.forEach((sec, i) => { if (sec.getBoundingClientRect().top < line) n = i; });
+  // the active stage is the one whose text occupies most of the readable area
+  const top = field.phone ? innerHeight * 0.5 : 0, bot = innerHeight;
+  let n = 0, best = 0;
+  sections.forEach((sec, i) => { const r = (sec.querySelector(".inner") || sec).getBoundingClientRect(), v = Math.min(r.bottom, bot) - Math.max(r.top, top); if (v > best) { best = v; n = i; } });
+  if (scrollY < 40) n = 0;
   if (n !== current) go(n);
 }
 function go(n) {
@@ -95,7 +97,8 @@ function go(n) {
   const showMelt = n >= MELT_FROM && s.id !== "sandbox";
   meltWrap.hidden = !showMelt; dock.hidden = false; readout.innerHTML = "";
   [...list.querySelectorAll("a")].forEach((a, i) => a.classList.toggle("on", i === n));
-  toggle.textContent = n === 0 ? "Stages" : `${String(n + 1).padStart(2, "0")} / ${STAGES.length} · ${s.title}`;
+  toggle.textContent = n === 0 ? "Stages" : `${String(n + 1).padStart(2, "0")} / ${STAGES.length}` + (field.phone ? "" : ` · ${s.title}`);
+  toggle.setAttribute("aria-label", `Stages. Current: ${s.title}`);
   field.setScene(SCENES[s.id] || SCENES.raw, api);
 }
 meltIn.addEventListener("input", () => { field.scene?.melt?.(field, api.melt, api); field.kick(); });
