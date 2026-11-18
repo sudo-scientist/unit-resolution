@@ -782,7 +782,7 @@
     step(dt);
     draw();
   }
-  function run() { if (!raf && net && !document.hidden) { last = 0; raf = requestAnimationFrame(frame); } }
+  function run() { if (!raf && net && !document.hidden && !field.hidden) { last = 0; raf = requestAnimationFrame(frame); } }
   function rest() { if (raf) cancelAnimationFrame(raf); raf = 0; }
 
   document.addEventListener('visibilitychange', function () { if (document.hidden) rest(); else run(); });
@@ -792,6 +792,7 @@
     clearTimeout(sizeTimer);
     sizeTimer = setTimeout(function () {
       // Phone toolbars come and go; only a real change of screen rebuilds the field.
+      if (field.hidden) return;
       if (window.innerWidth === builtW && Math.abs(window.innerHeight - builtH) < builtH * 0.14) return;
       begin();
     }, 180);
@@ -803,6 +804,95 @@
     run();
   }
 
+  /* ---------- beat one: two patches of one gray ---------- */
+
+  var hook = document.getElementById('hook');
+  var field = document.getElementById('field');
+  var stage = document.getElementById('stage');
+  var hookLine = document.getElementById('hook-line');
+  var patches = [document.getElementById('patch-a'), document.getElementById('patch-b')];
+  var spots = [{ x: 0.15, y: 0.5 }, { x: 0.85, y: 0.5 }];   // patch centers, as parts of the stage
+  var met = false;
+
+  // The honesty check. Both patches must be the identical color at all
+  // times; if they ever differ this throws and marks the page.
+  function sameShade() {
+    var a = getComputedStyle(patches[0]), b = getComputedStyle(patches[1]);
+    if (a.backgroundColor !== b.backgroundColor || a.opacity !== '1' || b.opacity !== '1' ||
+        a.filter !== 'none' || b.filter !== 'none' || a.mixBlendMode !== 'normal' || b.mixBlendMode !== 'normal') {
+      document.documentElement.setAttribute('data-fault', 'patches');
+      throw new Error('The two patches differ: ' + a.backgroundColor + ' / ' + b.backgroundColor);
+    }
+    return a.backgroundColor;
+  }
+
+  function place() {
+    var box = stage.getBoundingClientRect(), size = patches[0].offsetWidth;
+    for (var p = 0; p < 2; p++) {
+      patches[p].style.transform = 'translate(' + (spots[p].x * box.width - size / 2) + 'px,' +
+        (spots[p].y * box.height - size / 2) + 'px)';
+    }
+  }
+
+  function meet() {
+    if (met) return;
+    met = true;
+    sameShade();
+    hook.classList.add('met');
+    var text = 'They are the same. Your mind decided before you looked.';
+    if (calm) { hookLine.textContent = text; return; }
+    hookLine.classList.add('out');
+    setTimeout(function () { hookLine.textContent = text; hookLine.classList.remove('out'); }, 320);
+  }
+
+  patches.forEach(function (el, p) {
+    var grip = null;
+    el.addEventListener('pointerdown', function (ev) {
+      var box = stage.getBoundingClientRect();
+      hook.classList.remove('gliding');
+      grip = { dx: spots[p].x * box.width - ev.clientX, dy: spots[p].y * box.height - ev.clientY };
+      el.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+    });
+    el.addEventListener('pointermove', function (ev) {
+      if (!grip) return;
+      var box = stage.getBoundingClientRect(), half = el.offsetWidth / 2;
+      spots[p].x = clamp(ev.clientX + grip.dx, half, box.width - half) / box.width;
+      spots[p].y = clamp(ev.clientY + grip.dy, half, box.height - half) / box.height;
+      place();
+      sameShade();
+      var gapX = (spots[0].x - spots[1].x) * box.width, gapY = (spots[0].y - spots[1].y) * box.height;
+      if (Math.sqrt(gapX * gapX + gapY * gapY) < half * 1.6) meet();
+    });
+    var drop = function () { grip = null; };
+    el.addEventListener('pointerup', drop);
+    el.addEventListener('pointercancel', drop);
+  });
+
+  // Without dragging: the patches slide together and the ground goes flat.
+  document.getElementById('together').addEventListener('click', function () {
+    var box = stage.getBoundingClientRect(), lap = patches[0].offsetWidth * 0.3 / box.width;
+    hook.classList.add('gliding');
+    hook.classList.add('level');
+    spots[0].x = 0.5 - lap; spots[1].x = 0.5 + lap;
+    spots[0].y = spots[1].y = 0.5;
+    place();
+    sameShade();
+    setTimeout(meet, calm ? 0 : 1250);
+  });
+
+  document.getElementById('see').addEventListener('click', function () {
+    hook.classList.add('gone');
+    setTimeout(function () { hook.hidden = true; }, calm ? 0 : 720);
+    field.hidden = false;
+    begin();
+    requestAnimationFrame(function () { field.classList.add('on'); });
+    touchBtn.focus({ preventScroll: true });
+  });
+
+  window.addEventListener('resize', function () { if (!hook.hidden) place(); });
+
   makeSprites();
-  begin();
+  place();
+  sameShade();
 })();

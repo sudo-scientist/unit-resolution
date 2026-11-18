@@ -9,7 +9,26 @@
 </head>
 <body>
 
-<section id="field">
+<section id="hook">
+  <p id="hook-line" aria-live="polite">Which one is darker?</p>
+  <div id="stage">
+    <div id="ground"><div id="flat"></div></div>
+    <div class="patch" id="patch-a"></div>
+    <div class="patch" id="patch-b"></div>
+  </div>
+  <div id="hook-foot">
+    <div id="hook-before">
+      <p id="hook-hint">Drag one onto the other.</p>
+      <button id="together" type="button">Bring them together</button>
+    </div>
+    <div id="hook-after">
+      <p id="hook-close">It took the shortest route to an answer. Usually that works.</p>
+      <button id="see" type="button">See how</button>
+    </div>
+  </div>
+</section>
+
+<section id="field" hidden>
   <canvas id="net"></canvas>
   <div id="panel">
     <div id="guide">
