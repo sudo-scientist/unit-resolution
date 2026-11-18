@@ -166,6 +166,15 @@ html, body {
 }
 #say.out { opacity: 0; }
 
+#skip {
+  font-size: 14px;
+  color: var(--dim);
+  padding: 5px 14px;
+  min-block-size: 34px;
+  border-color: rgba(236, 238, 243, 0.16);
+  background: transparent;
+}
+
 #controls {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

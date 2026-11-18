@@ -408,6 +408,8 @@
       e = smooth((sNow - 0.5) / 0.46);
       weightStale = paintStale = true;
     }
+    if (sNow <= 0.04 && did('gather')) relight();
+    if (sNow >= 0.96 && did('everywhere')) relight();
   }
 
   /* ---------- touch ---------- */
@@ -518,6 +520,130 @@
   }
   function readTime(text) { return Math.max(2800, 1100 + text.length * 50); }
 
+  /* ---------- the guide ---------- */
+
+  // Each step is its own named stage, with a prompt and a line for after.
+  var STAGES = [
+    { name: 'touch',
+      prompt: 'Touch anywhere.',
+      after: 'Light spreads along the lines and fades. It only goes so far.' },
+    { name: 'situation',
+      prompt: 'Change the situation.',
+      after: 'Same touch. Different things light up.' },
+    { name: 'gather',
+      prompt: 'Drag the slider toward All at once.',
+      after: 'Same network. Now a whole group lights at once, ready to use. A border appears where the light stops.' },
+    { name: 'situation-again',
+      prompt: 'Change the situation again.',
+      after: 'Nothing changes.' },
+    { name: 'open',
+      prompt: 'Touch a lit group to open it.' },
+    { name: 'open-other',
+      prompt: 'Open another.' },
+    { name: 'everywhere',
+      prompt: 'Drag all the way to Everywhere.',
+      after: 'With nothing holding it, the light goes everywhere and nothing stands out.' },
+    { name: 'end',
+      lines: [
+        'A unit is what lights up together.',
+        'A border is where the light stops. For some minds it stops in the same place every time.',
+        'All at once is quick and ready to use. By situation fits better and takes longer. A group needs both.'
+      ] }
+  ];
+  var guide = { at: -1, part: 'prompt', line: 0, first: -1, timer: 0, done: false };
+  var skipBtn = document.getElementById('skip');
+
+  // Called whenever the guide moves. A later pass can start a clip here,
+  // keyed by stage name and part ('prompt', 'after', or a line number).
+  function stageChanged(name, part) {}
+
+  function relight() { touches.length = 0; touchDot(lastDot < 0 ? net.walk[0] : lastDot); }
+
+  // A tile of the kind the visitor has not opened yet, nearest the middle.
+  function pickOther() {
+    var want = guide.first < 0 ? 1 : 1 - guide.first, best = Infinity, at = -1, d;
+    for (var g = 0; g < net.k; g++) {
+      if (net.has[g] !== want || openAt[g] >= 0) continue;
+      d = Math.pow(net.cx[g] - net.w / 2, 2) + Math.pow(net.cy[g] - net.h / 2, 2);
+      if (d < best) { best = d; at = g; }
+    }
+    return at;
+  }
+
+  function prompt(i) {
+    clearTimeout(guide.timer);
+    pointed = -1;
+    if (i >= STAGES.length) { finish(); return; }
+    guide.at = i; guide.part = 'prompt';
+    var st = STAGES[i];
+    if (st.name === 'end') { guide.line = 0; endLine(); return; }
+    if (st.name === 'open' || st.name === 'open-other') {
+      // These two only make sense at the left end with something lit.
+      if (sGoal > 0.02) { slider.value = 0; readSlider(); }
+      if (st.name === 'open-other') pointed = pickOther();
+      else if (held < 0) relight();
+    }
+    standing = st.prompt;
+    show(standing);
+    stageChanged(st.name, 'prompt');
+  }
+
+  function endLine() {
+    var st = STAGES[guide.at];
+    if (guide.line >= st.lines.length) { finish(); return; }
+    standing = st.lines[guide.line];
+    show(standing);
+    stageChanged(st.name, guide.line);
+    guide.timer = setTimeout(function () { guide.line++; endLine(); }, readTime(standing) + 900);
+  }
+
+  function finish() {
+    clearTimeout(guide.timer);
+    guide.done = true;
+    pointed = -1;
+    standing = '';
+    show('');
+    skipBtn.hidden = true;
+  }
+
+  // Is the guide waiting for this step? While an after-line is still up,
+  // the next step can already be taken.
+  function wants(name) {
+    if (guide.done || guide.at < 0) return 0;
+    if (guide.part === 'prompt') return STAGES[guide.at].name === name ? 1 : 0;
+    var next = STAGES[guide.at + 1];
+    return next && next.name === name ? 2 : 0;
+  }
+
+  function did(name, text) {
+    var how = wants(name);
+    if (!how) return false;
+    if (how === 2) guide.at++;
+    var st = STAGES[guide.at], next = guide.at + 1;
+    guide.part = 'after';
+    pointed = -1;
+    standing = text || st.after;
+    show(standing);
+    stageChanged(st.name, 'after');
+    clearTimeout(guide.timer);
+    guide.timer = setTimeout(function () { prompt(next); }, readTime(standing));
+    return true;
+  }
+
+  function guideOpened(g, text) {
+    var kind = net.has[g];
+    if (wants('open')) { guide.first = kind; return did('open', text); }
+    if (wants('open-other') && (guide.first < 0 || kind !== guide.first)) return did('open-other', text);
+    return false;
+  }
+
+  skipBtn.addEventListener('click', function () {
+    if (guide.done) return;
+    clearTimeout(guide.timer);
+    if (STAGES[guide.at].name === 'end') { guide.line++; endLine(); }
+    else prompt(guide.at + 1);
+  });
+
   /* ---------- opening a unit ---------- */
 
   var OPEN_CLEAN = 'Everything in here belonged.';
@@ -530,12 +656,11 @@
   function openGroup(g) {
     openAt[g] = now;
     var text = net.has[g] ? OPEN_STRAY : OPEN_CLEAN;
-    show(text);
     clearTimeout(noteTimer);
+    if (guideOpened(g, text)) return;
+    show(text);
     noteTimer = setTimeout(function () { show(standing); }, readTime(text));
-    opened(g);
   }
-  function opened(g) {}
 
   function unfold() {
     for (var g = 0; g < net.k; g++) {
@@ -563,7 +688,7 @@
   function tap(i) {
     var g = net.grp[i];
     if (openAt[g] >= 0) return;
-    if (canOpen(g)) openGroup(g); else touchDot(i);
+    if (canOpen(g)) openGroup(g); else { touchDot(i); did('touch'); }
   }
 
   var lastOpenedByKey = -1;
@@ -572,6 +697,7 @@
     if (held >= 0 && canOpen(held) && lastOpenedByKey !== held) { lastOpenedByKey = held; openGroup(held); return; }
     lastOpenedByKey = -1;
     touchDot(net.walk[walkAt++ % net.walk.length]);
+    did('touch');
   }
 
   function shine(dt) {
@@ -580,6 +706,10 @@
     for (g = 0; g < net.k; g++) {
       hold[g] = calm ? (g === held ? 1 : 0) : clamp(hold[g] + (g === held ? dt * 2.5 : -dt * 1.6), 0, 1);
       tile[g] = 0.42 * smooth(hold[g]);
+    }
+    if (pointed >= 0) {
+      // The guide points at a tile by letting it breathe, slowly.
+      tile[pointed] = Math.max(tile[pointed], calm ? 0.55 : 0.36 + 0.22 * Math.sin(now * TAU * 0.55));
     }
     for (t = touches.length - 1; t >= 0; t--) {
       T = touches[t]; age = now - T.at;
@@ -612,8 +742,8 @@
   function changeSituation() {
     sitAt = (sitAt + 1) % net.sit.length;
     sitMoving = true;
-    touches.length = 0;
-    touchDot(lastDot < 0 ? net.walk[0] : lastDot);
+    relight();
+    if (!did('situation') && u > 0.9) did('situation-again');
   }
 
   function settle(dt) {
@@ -802,6 +932,8 @@
     builtW = window.innerWidth; builtH = window.innerHeight;
     layout();
     run();
+    if (guide.at < 0) prompt(0);
+    else if (!guide.done && STAGES[guide.at].name === 'open-other' && guide.part === 'prompt') pointed = pickOther();
   }
 
   /* ---------- beat one: two patches of one gray ---------- */
