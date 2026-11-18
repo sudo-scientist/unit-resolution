@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Unit Resolution</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="talk.css">
+</head>
+<body>
+
+<main id="talk">
+  <div id="minds">
+    <section class="mind">
+      <h2 id="name-a">One mind</h2>
+      <div class="pane"><canvas id="net-a" tabindex="0" aria-labelledby="name-a"></canvas></div>
+      <div class="dial">
+        <input id="slider-a" type="range" min="0" max="1000" step="20" value="500" aria-labelledby="name-a">
+        <div class="marks" aria-hidden="true"><span>Tight</span><span>Loose</span></div>
+      </div>
+    </section>
+    <section class="mind">
+      <h2 id="name-b">Another mind</h2>
+      <div class="pane"><canvas id="net-b" aria-labelledby="name-b"></canvas></div>
+      <div class="dial">
+        <input id="slider-b" type="range" min="0" max="1000" step="20" value="300" aria-labelledby="name-b">
+        <div class="marks" aria-hidden="true"><span>Tight</span><span>Loose</span></div>
+      </div>
+    </section>
+  </div>
+  <div id="band"><p id="say" aria-live="polite"></p></div>
+</main>
+
+<script src="talk.js"></script>
+</body>
+</html>
