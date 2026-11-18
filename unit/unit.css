@@ -78,6 +78,7 @@ button:focus-visible, input:focus-visible {
 }
 
 #touch { grid-area: touch; }
+#situation { grid-area: situation; }
 
 #dial {
   grid-area: dial;
@@ -160,4 +161,5 @@ button:focus-visible, input:focus-visible {
     grid-template-areas: "dial dial" "touch situation";
   }
   #touch { justify-self: start; }
+  #situation { justify-self: end; }
 }

@@ -356,7 +356,7 @@
     w = new Float32Array(net.ln); wAlpha = new Uint8Array(net.ln);
     mul = new Float32Array(net.sit[0]);
     paintStale = weightStale = true;
-    touches.length = 0; lastDot = -1; held = -1;
+    touches.length = 0; lastDot = -1; held = -1; sitAt = 0; sitMoving = false;
   }
 
   // Where the field has to stop so the controls stay clear of it.
@@ -531,6 +531,32 @@
     tap(net.walk[walkAt++ % net.walk.length]);
   });
 
+  /* ---------- the situation ---------- */
+
+  var sitAt = 0, sitMoving = false;
+
+  // A new situation strengthens some links and weakens others, everywhere.
+  // The last touch is played again so the difference can be seen.
+  function changeSituation() {
+    sitAt = (sitAt + 1) % net.sit.length;
+    sitMoving = true;
+    touches.length = 0;
+    touchDot(lastDot < 0 ? net.walk[0] : lastDot);
+  }
+
+  function settle(dt) {
+    if (!sitMoving) return;
+    var goal = net.sit[sitAt], rate = calm ? 1 : 1 - Math.exp(-dt * 7), gapLeft = 0;
+    for (var l = 0; l < net.ln; l++) {
+      mul[l] += (goal[l] - mul[l]) * rate;
+      gapLeft = Math.max(gapLeft, Math.abs(goal[l] - mul[l]));
+    }
+    if (gapLeft < 0.003) { mul.set(goal); sitMoving = false; }
+    weightStale = true;
+  }
+
+  document.getElementById('situation').addEventListener('click', changeSituation);
+
   /* ---------- drawing ---------- */
 
   function tint() {
@@ -667,6 +693,7 @@
 
   function step(dt) {
     follow(dt);
+    settle(dt);
     if (weightStale) {
       weigh();
       for (var t = 0; t < touches.length; t++) spread(touches[t]);
