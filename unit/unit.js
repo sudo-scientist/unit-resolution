@@ -297,6 +297,8 @@
       for (j = 0; j < mid.length; j++) if (!stray[mid[j]]) { walk.push(mid[j]); break; }
     }
 
+    for (c = walk.length - 1; c > 0; c--) { j = Math.floor(rand() * (c + 1)); m = walk[c]; walk[c] = walk[j]; walk[j] = m; }
+
     return {
       n: n, k: k, ln: ln, gap: gap, w: w, h: h,
       x: x, y: y, grp: grp, hue: hue, stray: stray, has: has, flat: flat, mem: mem,
@@ -357,6 +359,8 @@
     mul = new Float32Array(net.sit[0]);
     paintStale = weightStale = true;
     touches.length = 0; lastDot = -1; held = -1; sitAt = 0; sitMoving = false;
+    openAt = new Float32Array(net.k); for (var g = 0; g < net.k; g++) openAt[g] = -1;
+    pointed = -1;
   }
 
   // Where the field has to stop so the controls stay clear of it.
@@ -498,7 +502,77 @@
     return at;
   }
 
-  function tap(i) { touchDot(i); }
+  /* ---------- the line of text ---------- */
+
+  var sayEl = document.getElementById('say');
+  var sayTimer = 0, standing = '';       // standing: what the guide is showing
+
+  function show(text) {
+    clearTimeout(sayTimer);
+    if (calm) { sayEl.textContent = text; sayEl.classList.remove('out'); return; }
+    sayEl.classList.add('out');
+    sayTimer = setTimeout(function () {
+      sayEl.textContent = text;
+      sayEl.classList.remove('out');
+    }, 200);
+  }
+  function readTime(text) { return Math.max(2800, 1100 + text.length * 50); }
+
+  /* ---------- opening a unit ---------- */
+
+  var OPEN_CLEAN = 'Everything in here belonged.';
+  var OPEN_STRAY = "This one never belonged. From outside, you couldn't tell.";
+  var OPEN_FOR = 5.4;      // seconds a tile stays open, start to finish
+  var openAt = null;       // per group: when it was opened, or -1
+  var pointed = -1;        // a tile the guide is pointing at
+  var noteTimer = 0;
+
+  function openGroup(g) {
+    openAt[g] = now;
+    var text = net.has[g] ? OPEN_STRAY : OPEN_CLEAN;
+    show(text);
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () { show(standing); }, readTime(text));
+    opened(g);
+  }
+  function opened(g) {}
+
+  function unfold() {
+    for (var g = 0; g < net.k; g++) {
+      if (openAt[g] < 0) continue;
+      var age = now - openAt[g], o, j, i;
+      if (calm) o = age < OPEN_FOR - 0.8 ? 1 : 0;
+      else o = age < 0.7 ? smooth(age / 0.7) : age < OPEN_FOR - 0.8 ? 1 : 1 - smooth((age - OPEN_FOR + 0.8) / 0.8);
+      var beat = calm ? (o ? 0.45 : 0) : Math.sin(Math.PI * clamp((age - 0.9) / 1.2, 0, 1));
+      if (age >= OPEN_FOR) { openAt[g] = -1; o = 0; beat = 0; if (held === g) held = -1; }
+      open[g] = o;
+      for (j = 0; j < net.mem[g].length; j++) {
+        i = net.mem[g][j];
+        light[i] *= 1 - o;
+        if (net.stray[i]) { grow[i] = beat; light[i] += 0.85 * beat; }
+      }
+      paintStale = true;
+    }
+  }
+
+  // At the left end, touching a lit tile again opens it.
+  function canOpen(g) {
+    return u > 0.9 && sGoal < 0.1 && openAt[g] < 0 && ((g === held && hold[g] > 0.25) || g === pointed);
+  }
+
+  function tap(i) {
+    var g = net.grp[i];
+    if (openAt[g] >= 0) return;
+    if (canOpen(g)) openGroup(g); else touchDot(i);
+  }
+
+  var lastOpenedByKey = -1;
+  function touchKey() {
+    if (pointed >= 0 && canOpen(pointed)) { openGroup(pointed); return; }
+    if (held >= 0 && canOpen(held) && lastOpenedByKey !== held) { lastOpenedByKey = held; openGroup(held); return; }
+    lastOpenedByKey = -1;
+    touchDot(net.walk[walkAt++ % net.walk.length]);
+  }
 
   function shine(dt) {
     var n = net.n, i, t, T, age, tau, g;
@@ -527,9 +601,7 @@
   });
 
   var touchBtn = document.getElementById('touch');
-  touchBtn.addEventListener('click', function () {
-    tap(net.walk[walkAt++ % net.walk.length]);
-  });
+  touchBtn.addEventListener('click', touchKey);
 
   /* ---------- the situation ---------- */
 
@@ -650,7 +722,7 @@
       b = Math.min(1, light[i]);
       var r = net.rad[i] * (1 + 0.9 * grow[i]);
       var hs = r * (7 + 16 * b);
-      ctx.globalAlpha = Math.min(1, (0.2 + 0.8 * b) * fade);
+      ctx.globalAlpha = Math.min(1, (0.2 + 0.45 * open[g] + 0.8 * b) * fade);
       ctx.drawImage(glowSprite[bucket[i]], X[i] - hs, Y[i] - hs, hs * 2, hs * 2);
       if (b > 0.02) {
         hs = r * (5 + 13 * b);
@@ -699,6 +771,7 @@
       for (var t = 0; t < touches.length; t++) spread(touches[t]);
     }
     shine(dt);
+    unfold();
   }
 
   function frame(ms) {
