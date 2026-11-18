@@ -30,6 +30,7 @@
 
 <section id="field" hidden>
   <canvas id="net"></canvas>
+  <p id="intro"><span>This is a picture of what your mind just did.</span> <span>Each dot is one small detail you know.</span> <span>Lines join details that go together.</span></p>
   <div id="panel">
     <div id="guide">
       <p id="say" aria-live="polite"></p>
@@ -38,14 +39,12 @@
     <div id="controls">
       <button id="touch" type="button">Touch</button>
       <div id="dial">
-        <input id="slider" type="range" min="0" max="1000" step="20" value="500" aria-labelledby="mark-a mark-b mark-c">
+        <input id="slider" type="range" min="0" max="1000" step="20" value="500" aria-labelledby="mark-a mark-c">
         <div id="marks" aria-hidden="true">
-          <span id="mark-a">All at once</span>
-          <span id="mark-b">By situation</span>
-          <span id="mark-c">Everywhere</span>
+          <span id="mark-a">Tight</span>
+          <span id="mark-c">Loose</span>
         </div>
       </div>
-      <button id="situation" type="button">Change the situation</button>
     </div>
   </div>
 </section>

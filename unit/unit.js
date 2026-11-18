@@ -218,8 +218,7 @@
     }
     var ln = la.length;
     var A = new Int32Array(la), B = new Int32Array(lb);
-    var base = new Float32Array(ln), inside = new Uint8Array(ln), sit = [];
-    for (s = 0; s < 4; s++) sit.push(new Float32Array(ln));
+    var base = new Float32Array(ln), inside = new Uint8Array(ln);
     for (l = 0; l < ln; l++) {
       var same = grp[A[l]] === grp[B[l]];
       inside[l] = same ? 1 : 0;
@@ -227,12 +226,10 @@
       if (same && (stray[A[l]] || stray[B[l]])) base[l] = 1;   // strays are strongly linked in
       var ang = Math.atan2(y[B[l]] - y[A[l]], x[B[l]] - x[A[l]]);
       var mx = (x[A[l]] + x[B[l]]) / 2 / w, my = (y[A[l]] + y[B[l]]) / 2 / h;
-      // Each situation favors links that run one way, and the way bends across the field.
-      for (s = 0; s < 4; s++) {
-        var th = s * Math.PI / 4 + 0.3 + 0.9 * Math.sin(mx * 3.1 + s * 1.7) * Math.cos(my * 2.7 + s);
-        var r = 0.62 * (0.5 + 0.5 * Math.cos(2 * (ang - th))) + 0.38 * rand();
-        sit[s][l] = 0.22 + 1.75 * Math.pow(r, 1.4);
-      }
+      // Links that run one way are a little stronger, and the way bends across the field.
+      var th = 0.3 + 0.9 * Math.sin(mx * 3.1) * Math.cos(my * 2.7);
+      var r = 0.62 * (0.5 + 0.5 * Math.cos(2 * (ang - th))) + 0.38 * rand();
+      base[l] *= 0.22 + 1.75 * Math.pow(r, 1.4);
     }
 
     // Which links leave each dot.
@@ -246,7 +243,7 @@
     }
 
     // The outline of each group: a smooth closed line that hugs its dots.
-    var edge = [], flatPaint = [], edgePaint = [], pad = gap * 0.36;
+    var edge = [], rings = [], flatPaint = [], edgePaint = [], pad = gap * 0.36;
     for (g = 0; g < k; g++) {
       var pts = [];
       for (j = 0; j < mem[g].length; j++) pts.push([x[mem[g][j]] - cx[g], y[mem[g][j]] - cy[g]]);
@@ -277,9 +274,30 @@
         ring.push([d * Math.cos(j / turns * TAU), d * Math.sin(j / turns * TAU)]);
       }
       edge.push(ringPath(ring));
+      rings.push(ring);
       flatPaint.push(paintName(shade(0.78, 0.15, flat[g])));
       edgePaint.push(paintName(shade(0.9, 0.09, flat[g])));
     }
+
+    // How far the groups must have pulled in before their outlines can be
+    // drawn with a clear dark gap between every pair. Outlines only appear
+    // once the dots are past this point, so two outlines never meet.
+    var clear = Math.max(8, gap * 0.26), lo = 0.5, hi = 1, fit;
+    var meets = function (q) {
+      for (var ga = 0; ga < k; ga++) for (var gb = ga + 1; gb < k; gb++) {
+        var ra = rings[ga], rb = rings[gb];
+        for (var pa = 0; pa < ra.length; pa++) {
+          var ax = cx[ga] + ra[pa][0] * q, ay = cy[ga] + ra[pa][1] * q;
+          for (var pb = 0; pb < rb.length; pb++) {
+            var ex = cx[gb] + rb[pb][0] * q - ax, ey = cy[gb] + rb[pb][1] * q - ay;
+            if (ex * ex + ey * ey < clear * clear) return true;
+          }
+        }
+      }
+      return false;
+    };
+    for (c = 0; c < 12; c++) { fit = (lo + hi) / 2; if (meets(fit)) hi = fit; else lo = fit; }
+    fit = lo;
 
     // Per-dot motion and size.
     var f1 = new Float32Array(n), f2 = new Float32Array(n), p1 = new Float32Array(n), p2 = new Float32Array(n);
@@ -302,7 +320,7 @@
     return {
       n: n, k: k, ln: ln, gap: gap, w: w, h: h,
       x: x, y: y, grp: grp, hue: hue, stray: stray, has: has, flat: flat, mem: mem,
-      cx: cx, cy: cy, A: A, B: B, base: base, inside: inside, sit: sit,
+      cx: cx, cy: cy, A: A, B: B, base: base, inside: inside, q: fit, squeeze: Math.min(SQUEEZE, fit - 0.06), clear: clear,
       start: start, viaLink: viaLink, viaDot: viaDot,
       edge: edge, flatPaint: flatPaint, edgePaint: edgePaint,
       f1: f1, f2: f2, p1: p1, p2: p2, rad: rad, walk: walk
@@ -317,10 +335,11 @@
   var vw = 0, vh = 0, dpr = 1, fx = 0, fy = 0;      // viewport, and where the field sits in it
   var now = 0;                                       // seconds of visible running time
   var u = 0, e = 0;                                  // how far toward each end of the slider
-  var X, Y, light, tile, hold, open, grow, scale, paint, bucket, w, wAlpha, mul;
+  var X, Y, light, tile, hold, open, grow, scale, paint, bucket, w, wAlpha;
   var glowSprite = [], bloomSprite = null;
   var sharpCap = 2, slowFrames = 0, slowTime = 0;
   var paintStale = true, weightStale = true;
+  var seal = 0;            // 0 while groups are loose, 1 once they are closed tiles
 
   function makeSprites() {
     for (var b = 0; b < 36; b++) {
@@ -351,15 +370,15 @@
     var side = Math.max(16, vw * 0.035), top = Math.max(16, vh * 0.035);
     var floor = fieldFloor();
     fx = side; fy = top;
+    intro.style.bottom = (vh - floor) + 'px';
     net = build(vw - side * 2, Math.max(120, floor - top - 12));
     X = new Float32Array(net.n); Y = new Float32Array(net.n);
     light = new Float32Array(net.n); grow = new Float32Array(net.n);
     paint = new Array(net.n); bucket = new Uint8Array(net.n);
     tile = new Float32Array(net.k); hold = new Float32Array(net.k); open = new Float32Array(net.k); scale = new Float32Array(net.k);
     w = new Float32Array(net.ln); wAlpha = new Uint8Array(net.ln);
-    mul = new Float32Array(net.sit[0]);
     paintStale = weightStale = true;
-    touches.length = 0; lastDot = -1; held = -1; sitAt = 0; sitMoving = false;
+    touches.length = 0; lastDot = -1; held = -1;
     openAt = new Float32Array(net.k); for (var g = 0; g < net.k; g++) openAt[g] = -1;
     pointed = -1;
   }
@@ -372,12 +391,12 @@
 
   /* ---------- link weights ---------- */
 
-  // One rule for the whole slider. In the middle a link is as strong as the
-  // situation makes it. Toward the left, links inside a group lock on and links
+  // One rule for the whole slider. In the middle a link is as strong as it was
+  // made. Toward the left, links inside a group lock on and links
   // out of it let go. Toward the right, every link pulls about the same.
   function weigh() {
     for (var l = 0; l < net.ln; l++) {
-      var v = lerp(net.base[l] * mul[l], 0.7, e);
+      var v = lerp(net.base[l], 0.7, e);
       w[l] = net.inside[l] ? lerp(v, 1, u) : v * (1 - u) * (1 - u);
     }
     weightStale = false;
@@ -387,11 +406,12 @@
 
   var slider = document.getElementById('slider');
   var sGoal = 0.5, sNow = 0.5;      // 0 is the left end, 1 the right
-  var MARKS = ['All at once', 'By situation', 'Everywhere'];
 
   function readSlider() {
     sGoal = clamp(slider.value / 1000, 0, 1);
-    slider.setAttribute('aria-valuetext', MARKS[sGoal < 0.25 ? 0 : sGoal > 0.75 ? 2 : 1]);
+    if (sGoal <= 0.04) slider.setAttribute('aria-valuetext', 'Tight');
+    else if (sGoal >= 0.96) slider.setAttribute('aria-valuetext', 'Loose');
+    else slider.removeAttribute('aria-valuetext');
   }
   slider.addEventListener('input', readSlider);
 
@@ -410,7 +430,8 @@
       weightStale = paintStale = true;
     }
     if (sNow <= 0.04 && did('gather')) relight();
-    if (sNow >= 0.96 && did('everywhere')) relight();
+    if (sNow >= 0.96 && did('loose')) relight();
+    if (Math.abs(sNow - 0.5) < 0.07 && did('middle')) { stirAt = now; relightAt = now + (calm ? 0.1 : 1.5); }
   }
 
   /* ---------- touch ---------- */
@@ -526,31 +547,32 @@
   // Each step is its own named stage, with a prompt and a line for after.
   var STAGES = [
     { name: 'touch',
-      prompt: 'Touch anywhere.',
-      after: 'Light spreads along the lines and fades. It only goes so far.' },
-    { name: 'situation',
-      prompt: 'Change the situation.',
-      after: 'Same touch. Different things light up.' },
+      prompt: 'Touch a dot.',
+      after: "That's a thought. It brings up what's connected to it, then fades." },
     { name: 'gather',
-      prompt: 'Drag the slider toward All at once.',
-      after: 'Same network. Now a whole group lights at once, ready to use. A border appears where the light stops.' },
-    { name: 'situation-again',
-      prompt: 'Change the situation again.',
-      after: 'Nothing changes.' },
+      prompt: 'Drag the slider to Tight.',
+      after: "Now the details are packed into groups. Touch one and the whole group comes up at once. It's fast, and it's the same every time." },
     { name: 'open',
-      prompt: 'Touch a lit group to open it.' },
+      prompt: 'Touch a lit group to look inside.' },
     { name: 'open-other',
-      prompt: 'Open another.' },
-    { name: 'everywhere',
-      prompt: 'Drag all the way to Everywhere.',
-      after: 'With nothing holding it, the light goes everywhere and nothing stands out.' },
+      prompt: 'Look inside another.' },
+    { name: 'middle',
+      prompt: 'Drag back toward the middle.',
+      after: 'Now nothing is packed away. You can see every detail, odd ones included. But a thought takes longer, and brings up less at once.' },
+    { name: 'loose',
+      prompt: 'Drag all the way to Loose.',
+      after: 'With nothing holding the details together, a thought brings up a little of everything, and nothing stands out.' },
     { name: 'end',
       lines: [
-        'A unit is what lights up together.',
-        'A border is where the light stops. For some minds it stops in the same place every time.',
-        'All at once is quick and ready to use. By situation fits better and takes longer. A group needs both.'
+        'Your mind packs details into groups so it can use them fast. Usually the groups are right.',
+        "Sometimes something gets packed in that doesn't belong, and you can't see it from outside.",
+        "That's what happened with the two patches. Your mind packed each one together with its background, so you never saw the patch by itself.",
+        'Some minds pack tightly. Some keep the details loose. Each way has a price.'
       ] }
   ];
+  var LOOK_FROM = 2;       // looking inside a group starts at this stage
+  var looking = false;
+  var stirAt = -1, relightAt = 0;
   var guide = { at: -1, part: 'prompt', line: 0, first: -1, timer: 0, done: false };
   var skipBtn = document.getElementById('skip');
 
@@ -576,6 +598,7 @@
     pointed = -1;
     if (i >= STAGES.length) { finish(); return; }
     guide.at = i; guide.part = 'prompt';
+    if (i >= LOOK_FROM) looking = true;
     var st = STAGES[i];
     if (st.name === 'end') { guide.line = 0; endLine(); return; }
     if (st.name === 'open' || st.name === 'open-other') {
@@ -601,6 +624,7 @@
   function finish() {
     clearTimeout(guide.timer);
     guide.done = true;
+    looking = true;
     pointed = -1;
     standing = '';
     show('');
@@ -647,8 +671,8 @@
 
   /* ---------- opening a unit ---------- */
 
-  var OPEN_CLEAN = 'Everything in here belonged.';
-  var OPEN_STRAY = "This one never belonged. From outside, you couldn't tell.";
+  var OPEN_CLEAN = 'Everything packed in here goes together.';
+  var OPEN_STRAY = "See the odd one out? It got packed in with the rest. From outside, you couldn't tell.";
   var OPEN_FOR = 5.4;      // seconds a tile stays open, start to finish
   var openAt = null;       // per group: when it was opened, or -1
   var pointed = -1;        // a tile the guide is pointing at
@@ -681,15 +705,33 @@
     }
   }
 
-  // At the left end, touching a lit tile again opens it.
+  // Back toward the middle, each dot that does not match pulses once.
+  function stir() {
+    if (relightAt && now >= relightAt) { relightAt = 0; relight(); }
+    if (stirAt < 0) return;
+    var x = (now - stirAt) / 1.4, beat = x >= 1 ? 0 : calm ? 0.6 : Math.sin(Math.PI * x);
+    for (var i = 0; i < net.n; i++) if (net.stray[i]) { grow[i] = beat; light[i] += 0.85 * beat; }
+    if (x >= 1) stirAt = -1;
+  }
+
+  // At the left end, touching a lit tile again opens it, once the guide has
+  // introduced looking inside. Before that it is simply touched again.
   function canOpen(g) {
-    return u > 0.9 && sGoal < 0.1 && openAt[g] < 0 && ((g === held && hold[g] > 0.25) || g === pointed);
+    return looking && u > 0.9 && sGoal < 0.1 && openAt[g] < 0 && ((g === held && hold[g] > 0.25) || g === pointed);
   }
 
   function tap(i) {
     var g = net.grp[i];
     if (openAt[g] >= 0) return;
-    if (canOpen(g)) openGroup(g); else { touchDot(i); did('touch'); }
+    if (canOpen(g)) openGroup(g); else { touchDot(i); unveil(); did('touch'); }
+  }
+
+  var intro = document.getElementById('intro');
+  function unveil() {
+    if (intro.hidden) return;
+    document.getElementById('field').classList.remove('veiled');
+    intro.classList.add('out');
+    setTimeout(function () { intro.hidden = true; }, calm ? 0 : 700);
   }
 
   var lastOpenedByKey = -1;
@@ -698,6 +740,7 @@
     if (held >= 0 && canOpen(held) && lastOpenedByKey !== held) { lastOpenedByKey = held; openGroup(held); return; }
     lastOpenedByKey = -1;
     touchDot(net.walk[walkAt++ % net.walk.length]);
+    unveil();
     did('touch');
   }
 
@@ -734,37 +777,11 @@
   var touchBtn = document.getElementById('touch');
   touchBtn.addEventListener('click', touchKey);
 
-  /* ---------- the situation ---------- */
-
-  var sitAt = 0, sitMoving = false;
-
-  // A new situation strengthens some links and weakens others, everywhere.
-  // The last touch is played again so the difference can be seen.
-  function changeSituation() {
-    sitAt = (sitAt + 1) % net.sit.length;
-    sitMoving = true;
-    relight();
-    if (!did('situation') && u > 0.9) did('situation-again');
-  }
-
-  function settle(dt) {
-    if (!sitMoving) return;
-    var goal = net.sit[sitAt], rate = calm ? 1 : 1 - Math.exp(-dt * 7), gapLeft = 0;
-    for (var l = 0; l < net.ln; l++) {
-      mul[l] += (goal[l] - mul[l]) * rate;
-      gapLeft = Math.max(gapLeft, Math.abs(goal[l] - mul[l]));
-    }
-    if (gapLeft < 0.003) { mul.set(goal); sitMoving = false; }
-    weightStale = true;
-  }
-
-  document.getElementById('situation').addEventListener('click', changeSituation);
-
   /* ---------- drawing ---------- */
 
   function tint() {
     for (var i = 0; i < net.n; i++) {
-      var g = net.grp[i], ue = u * (1 - open[g]);
+      var g = net.grp[i], ue = seal * (1 - open[g]);
       var h = (net.hue[i] + arc(net.hue[i], net.flat[g]) * ue + 360) % 360;
       paint[i] = paintName(shade(0.78, 0.15, h));
       bucket[i] = Math.round(h / 10) % 36;
@@ -783,8 +800,10 @@
     // Where every dot is right now.
     var amp = calm ? 0 : net.gap * 0.085;
     // Dots gather first, so the gaps are already there when outlines arrive.
-    var gather = 1 - Math.pow(1 - u, 2.4);
-    for (g = 0; g < net.k; g++) scale[g] = lerp(lerp(1, SQUEEZE, gather), 1.08, open[g]);
+    var gather = 1 - Math.pow(1 - u, 4), pulled = lerp(1, net.squeeze, gather);
+    var sealNow = smooth((net.q - pulled) / (net.q - net.squeeze));
+    if (sealNow !== seal) { seal = sealNow; paintStale = true; }
+    for (g = 0; g < net.k; g++) scale[g] = lerp(pulled, 1.08, open[g]);
     for (i = 0; i < n; i++) {
       g = net.grp[i]; k = scale[g];
       X[i] = fx + net.cx[g] + (net.x[i] - net.cx[g]) * k + amp * Math.sin(now * net.f1[i] + net.p1[i]);
@@ -793,7 +812,7 @@
 
     // Tiles: the flat color of each group, stronger toward the left end.
     for (g = 0; g < net.k; g++) {
-      a = u * (1 - open[g]);
+      a = seal * (1 - open[g]);
       if (a < 0.004) continue;
       k = scale[g];
       ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * (fx + net.cx[g]), dpr * (fy + net.cy[g]));
@@ -835,7 +854,7 @@
     // Links carrying light.
     for (l = 0; l < net.ln; l++) {
       a = Math.sqrt(Math.min(1, light[net.A[l]]) * Math.min(1, light[net.B[l]]));
-      a *= 1 - 0.93 * u * (1 - Math.max(open[net.grp[net.A[l]]], open[net.grp[net.B[l]]]));
+      a *= 1 - 0.93 * seal * (1 - Math.max(open[net.grp[net.A[l]]], open[net.grp[net.B[l]]]));
       wAlpha[l] = a < 0.03 ? 0 : Math.max(1, Math.min(levels, Math.round(a * levels)));
     }
     ctx.strokeStyle = 'rgb(240,244,255)';
@@ -853,7 +872,7 @@
     if (paintStale) tint();
     for (i = 0; i < n; i++) {
       g = net.grp[i];
-      var fade = 1 - 0.9 * u * (1 - open[g]);
+      var fade = 1 - 0.9 * seal * (1 - open[g]);
       b = Math.min(1, light[i]);
       var r = net.rad[i] * (1 + 0.9 * grow[i]);
       var hs = r * (7 + 16 * b);
@@ -875,17 +894,17 @@
     }
 
     // Outlines: soft and wide at first, a hard line at the left end.
-    var soft = 1 - u;
+    var soft = 1 - seal, wide = Math.min(15, net.clear * 0.8);
     for (g = 0; g < net.k; g++) {
       var lit = Math.min(1, tile[g]);
-      a = (1 - open[g]) * (Math.pow(u, 2) * (0.5 + 0.5 * lit) + 0.6 * lit * Math.sqrt(u) * soft);
+      a = (1 - open[g]) * (Math.pow(seal, 2) * (0.5 + 0.5 * lit) + 0.6 * lit * Math.sqrt(seal) * soft);
       if (a < 0.004) continue;
       k = scale[g];
       ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * (fx + net.cx[g]), dpr * (fy + net.cy[g]));
       ctx.strokeStyle = net.edgePaint[g];
       if (soft > 0.02) {
-        ctx.globalAlpha = a * 0.16; ctx.lineWidth = (1.5 + 15 * soft) / k; ctx.stroke(net.edge[g]);
-        ctx.globalAlpha = a * 0.32; ctx.lineWidth = (1.5 + 6 * soft) / k; ctx.stroke(net.edge[g]);
+        ctx.globalAlpha = a * 0.16; ctx.lineWidth = (1.5 + wide * soft) / k; ctx.stroke(net.edge[g]);
+        ctx.globalAlpha = a * 0.32; ctx.lineWidth = (1.5 + wide * 0.4 * soft) / k; ctx.stroke(net.edge[g]);
       }
       ctx.globalAlpha = Math.min(1, a); ctx.lineWidth = (1.5 + 2 * soft) / k; ctx.stroke(net.edge[g]);
     }
@@ -900,12 +919,12 @@
 
   function step(dt) {
     follow(dt);
-    settle(dt);
     if (weightStale) {
       weigh();
       for (var t = 0; t < touches.length; t++) spread(touches[t]);
     }
     shine(dt);
+    stir();
     unfold();
   }
 
@@ -950,7 +969,7 @@
     builtW = window.innerWidth; builtH = window.innerHeight;
     layout();
     run();
-    if (guide.at < 0) prompt(0);
+    if (guide.at < 0) { field.classList.add('veiled'); prompt(0); }
     else if (!guide.done && STAGES[guide.at].name === 'open-other' && guide.part === 'prompt') pointed = pickOther();
   }
 

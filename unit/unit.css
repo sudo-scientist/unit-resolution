@@ -130,6 +130,31 @@ html, body {
 }
 #field.on { opacity: 1; }
 
+#net { transition: opacity 0.9s var(--ease); }
+#field.veiled #net { opacity: 0.22; }
+
+/* shown before anything else in beat two, until the first touch */
+#intro {
+  position: absolute;
+  inset: 0 0 auto 0;
+  inset-block-end: 0;
+  margin: 0;
+  padding: 0 max(22px, 6vw);
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.5em;
+  text-align: center;
+  font-size: clamp(20px, 2.5vw, 31px);
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  pointer-events: none;
+  transition: opacity 0.6s var(--ease);
+}
+#intro span { display: block; max-inline-size: 24em; text-wrap: balance; }
+#intro.out { opacity: 0; }
+
 #net {
   position: absolute;
   inset: 0;
@@ -177,8 +202,8 @@ html, body {
 
 #controls {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-areas: "touch dial situation";
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "touch dial";
   align-items: start;
   gap: 14px 22px;
 }
@@ -205,24 +230,11 @@ button:focus-visible, input:focus-visible {
 }
 
 #touch { grid-area: touch; }
-#situation { grid-area: situation; }
 
 #dial {
   grid-area: dial;
   position: relative;
   min-inline-size: 0;
-}
-
-/* the middle mark on the track */
-#dial::before {
-  content: "";
-  position: absolute;
-  inset-inline-start: 50%;
-  inset-block-start: 13px;
-  inline-size: 1px;
-  block-size: 14px;
-  background: rgba(236, 238, 243, 0.4);
-  pointer-events: none;
 }
 
 #slider {
@@ -272,24 +284,22 @@ button:focus-visible, input:focus-visible {
 
 #marks {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 1fr 1fr;
   font-size: 14px;
   color: var(--dim);
   letter-spacing: 0.01em;
   user-select: none;
   -webkit-user-select: none;
 }
-#mark-b { text-align: center; }
 #mark-c { text-align: end; }
 
 @media (max-width: 680px) {
   #controls {
-    grid-template-columns: 1fr 1fr;
-    grid-template-areas: "dial dial" "touch situation";
+    grid-template-columns: 1fr;
+    grid-template-areas: "dial" "touch";
   }
-  #guide { min-block-size: 5.9em; align-items: end; }
+  #guide { min-block-size: 7.4em; align-items: end; }
   #touch { justify-self: start; }
-  #situation { justify-self: end; }
 }
 
 @media (prefers-reduced-motion: reduce) {
