@@ -246,14 +246,35 @@
     }
 
     // The outline of each group: a smooth closed line that hugs its dots.
-    var edge = [], flatPaint = [], edgePaint = [], pad = gap * 0.46;
+    var edge = [], flatPaint = [], edgePaint = [], pad = gap * 0.36;
     for (g = 0; g < k; g++) {
       var pts = [];
       for (j = 0; j < mem[g].length; j++) pts.push([x[mem[g][j]] - cx[g], y[mem[g][j]] - cy[g]]);
-      var ring = convex(pts);
-      for (j = 0; j < ring.length; j++) {
-        d = Math.sqrt(ring[j][0] * ring[j][0] + ring[j][1] * ring[j][1]) || 1;
-        ring[j] = [ring[j][0] * (1 + pad / d), ring[j][1] * (1 + pad / d)];
+      // Measure how far the group reaches in every direction, soften that
+      // into a rounded shape, then let it out until every dot is inside.
+      var hull = convex(pts), hm = hull.length, ring = [], far0 = [], far1, short = 0, turns = 72;
+      for (j = 0; j < turns; j++) {
+        var dirx = Math.cos(j / turns * TAU), diry = Math.sin(j / turns * TAU), hit = 0;
+        for (c = 0; c < hm; c++) {
+          var P = hull[c], Q = hull[(c + 1) % hm];
+          var ex = Q[0] - P[0], ey = Q[1] - P[1], den = dirx * ey - diry * ex;
+          if (Math.abs(den) < 1e-9) continue;
+          var along = (P[0] * ey - P[1] * ex) / den, on = (P[0] * diry - P[1] * dirx) / den;
+          if (along > 0 && on >= -1e-6 && on <= 1 + 1e-6 && along > hit) hit = along;
+        }
+        far0.push(hit);
+      }
+      far1 = far0.slice();
+      for (var soften = 0; soften < 10; soften++) {
+        var prev = far1.slice();
+        for (j = 0; j < turns; j++) {
+          far1[j] = (prev[(j + turns - 1) % turns] + 2 * prev[j] + prev[(j + 1) % turns]) / 4;
+        }
+      }
+      for (j = 0; j < turns; j++) short = Math.max(short, far0[j] - far1[j]);
+      for (j = 0; j < turns; j++) {
+        d = far1[j] + short + pad;
+        ring.push([d * Math.cos(j / turns * TAU), d * Math.sin(j / turns * TAU)]);
       }
       edge.push(ringPath(ring));
       flatPaint.push(paintName(shade(0.78, 0.15, flat[g])));
@@ -294,7 +315,7 @@
   var vw = 0, vh = 0, dpr = 1, fx = 0, fy = 0;      // viewport, and where the field sits in it
   var now = 0;                                       // seconds of visible running time
   var u = 0, e = 0;                                  // how far toward each end of the slider
-  var X, Y, light, tile, open, grow, scale, paint, bucket, w, wAlpha, mul;
+  var X, Y, light, tile, hold, open, grow, scale, paint, bucket, w, wAlpha, mul;
   var glowSprite = [], bloomSprite = null;
   var paintStale = true, weightStale = true;
 
@@ -331,11 +352,11 @@
     X = new Float32Array(net.n); Y = new Float32Array(net.n);
     light = new Float32Array(net.n); grow = new Float32Array(net.n);
     paint = new Array(net.n); bucket = new Uint8Array(net.n);
-    tile = new Float32Array(net.k); open = new Float32Array(net.k); scale = new Float32Array(net.k);
+    tile = new Float32Array(net.k); hold = new Float32Array(net.k); open = new Float32Array(net.k); scale = new Float32Array(net.k);
     w = new Float32Array(net.ln); wAlpha = new Uint8Array(net.ln);
     mul = new Float32Array(net.sit[0]);
     paintStale = weightStale = true;
-    touches.length = 0; lastDot = -1;
+    touches.length = 0; lastDot = -1; held = -1;
   }
 
   // Where the field has to stop so the controls stay clear of it.
@@ -357,7 +378,37 @@
     weightStale = false;
   }
 
+  /* ---------- the slider ---------- */
+
+  var slider = document.getElementById('slider');
+  var sGoal = 0.5, sNow = 0.5;      // 0 is the left end, 1 the right
+  var MARKS = ['All at once', 'By situation', 'Everywhere'];
+
+  function readSlider() {
+    sGoal = clamp(slider.value / 1000, 0, 1);
+    slider.setAttribute('aria-valuetext', MARKS[sGoal < 0.25 ? 0 : sGoal > 0.75 ? 2 : 1]);
+  }
+  slider.addEventListener('input', readSlider);
+
+  // The field follows the slider with a little give, so the change is one
+  // continuous movement however the slider itself is moved.
+  function follow(dt) {
+    var before = sNow;
+    if (calm) sNow = sGoal;
+    else {
+      sNow += (sGoal - sNow) * (1 - Math.exp(-dt * 12));
+      if (Math.abs(sGoal - sNow) < 0.0004) sNow = sGoal;
+    }
+    if (sNow !== before) {
+      u = smooth((0.5 - sNow) / 0.46);
+      e = smooth((sNow - 0.5) / 0.46);
+      weightStale = paintStale = true;
+    }
+  }
+
   /* ---------- touch ---------- */
+
+  var held = -1;           // at the left end, the last touched group stays softly lit
 
   var touches = [];        // each: where it started, when, and how far it got
   var lastDot = -1;        // the visitor's last touch, kept for replays
@@ -435,6 +486,7 @@
     touches.push(T);
     if (touches.length > 4) touches.shift();
     lastDot = i;
+    held = net.grp[i];
   }
 
   function nearest(px, py) {
@@ -448,12 +500,18 @@
 
   function tap(i) { touchDot(i); }
 
-  function shine() {
-    var n = net.n, i, t, T, age, tau;
+  function shine(dt) {
+    var n = net.n, i, t, T, age, tau, g;
     for (i = 0; i < n; i++) light[i] = 0;
+    for (g = 0; g < net.k; g++) {
+      hold[g] = calm ? (g === held ? 1 : 0) : clamp(hold[g] + (g === held ? dt * 2.5 : -dt * 1.6), 0, 1);
+      tile[g] = 0.42 * smooth(hold[g]);
+    }
     for (t = touches.length - 1; t >= 0; t--) {
       T = touches[t]; age = now - T.at;
       if (age > T.far + 2.4) { touches.splice(t, 1); continue; }
+      g = net.grp[T.dot];
+      tile[g] = Math.max(tile[g], glow(age + 0.06));
       for (i = 0; i < n; i++) {
         if (T.show[i] <= 0) continue;
         tau = age - T.due[i];
@@ -509,7 +567,7 @@
       k = scale[g];
       ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * (fx + net.cx[g]), dpr * (fy + net.cy[g]));
       ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = a * (0.3 + 0.62 * Math.min(1, tile[g]));
+      ctx.globalAlpha = a * (0.34 + 0.6 * Math.min(1, tile[g]));
       ctx.fillStyle = net.flatPaint[g];
       ctx.fill(net.edge[g]);
       if (tile[g] > 0.01) {
@@ -544,7 +602,7 @@
     // Links carrying light.
     for (l = 0; l < net.ln; l++) {
       a = Math.sqrt(Math.min(1, light[net.A[l]]) * Math.min(1, light[net.B[l]]));
-      a *= 1 - 0.8 * u * (1 - Math.max(open[net.grp[net.A[l]]], open[net.grp[net.B[l]]]));
+      a *= 1 - 0.93 * u * (1 - Math.max(open[net.grp[net.A[l]]], open[net.grp[net.B[l]]]));
       wAlpha[l] = a < 0.03 ? 0 : Math.max(1, Math.min(levels, Math.round(a * levels)));
     }
     ctx.strokeStyle = 'rgb(240,244,255)';
@@ -562,7 +620,7 @@
     if (paintStale) tint();
     for (i = 0; i < n; i++) {
       g = net.grp[i];
-      var fade = 1 - 0.8 * u * (1 - open[g]);
+      var fade = 1 - 0.9 * u * (1 - open[g]);
       b = Math.min(1, light[i]);
       var r = net.rad[i] * (1 + 0.9 * grow[i]);
       var hs = r * (7 + 16 * b);
@@ -608,11 +666,12 @@
   var raf = 0, last = 0;
 
   function step(dt) {
+    follow(dt);
     if (weightStale) {
       weigh();
       for (var t = 0; t < touches.length; t++) spread(touches[t]);
     }
-    shine();
+    shine(dt);
   }
 
   function frame(ms) {
