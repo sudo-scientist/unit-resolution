@@ -21,6 +21,7 @@ for (const [name, viewport] of Object.entries(sizes)) {
     if (process.env.CLICK) for (let k = 0; k < +(process.env.CLICKN || 1); k++) { await page.click(process.env.CLICK); await page.waitForTimeout(+(process.env.CLICKGAP || 500)); }
     if (process.env.EVAL) await page.evaluate(process.env.EVAL);
     await page.waitForTimeout(wait);
+    if (process.env.FPS) console.log(id, await page.evaluate(() => Math.round(window.__field.fpsAcc)));
     await page.screenshot({ path: `shots/${name}${reduced ? "-rm" : ""}-${String(i + 1).padStart(2, "0")}-${id.slice(2)}.png` });
   }
   if (!only) { const fps = await page.evaluate(() => Math.round(window.__field.fpsAcc)); console.log(name, "fps≈", fps, "N=", await page.evaluate(() => window.__field.N)); }

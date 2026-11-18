@@ -75,7 +75,7 @@ export const crossing = {
   leave(f) { f.cam = null; },
   melt(f, v) { applyMelt(f, v); },
   down(f, m) { const c = f.clusterAt(m.x, m.y); if (c && this.go < 0) { c.up = !c.up; c.flash = 0.6; } },
-  button(f, id) { if (id !== "stepout") return; if (f.reduced) this.lit = !this.lit; else this.go = f.st; },
+  button(f, id) { if (id === "updown") { this.ki = ((this.ki ?? -1) + 1) % (f.clusters.length * 2); const c = f.clusters[this.ki >> 1]; c.up = !c.up; c.flash = 0.6; return; } if (id !== "stepout") return; if (f.reduced) this.lit = !this.lit; else this.go = f.st; },
   update(f, dt, st) {
     if (this.go < 0) return; const T = st - this.go, c = f.clusters[0], W = f.W / 2, H = f.H / 2, out = { x: c.x + c.r * 2.4, y: c.y - c.r * 0.6 };
     const key = [[0, W, H, 1], [1.4, c.x, c.y, 3.2], [3.2, out.x, out.y, 2.6], [5.6, (c.x + out.x) / 2, (c.y + out.y) / 2, 2.2], [7.2, c.x, c.y, 3.2], [8.8, W, H, 1]];
@@ -98,6 +98,7 @@ export const ceiling = {
   melt(f, v) { applyMelt(f, v); },
   move(f, m) { const c = f.clusterAt(m.x, m.y); this.src = c ? c.k : -1; },
   down(f, m) { this.move(f, m); },
+  change(f, id, v) { if (id === "touch") this.src = v ? 0 : -1; },
   update(f, dt) {
     const A = this.act; if (this.src >= 0) A[this.src] = 1;
     for (const l of f.links) {

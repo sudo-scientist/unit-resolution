@@ -1,5 +1,5 @@
 // Act I — how meaning forms
-import { WARM, COOL, PALE, rgba, lerp, clamp, smooth, rnd } from "./field.js";
+import { WARM, COOL, PALE, rgba, lerp, clamp, smooth, rnd, glowStroke } from "./field.js";
 
 // k cluster centres laid out inside the view rect: a ring, with a centre once there are six or more
 export function spots(f, k, rx = 0.36, ry = 0.36) {
@@ -20,6 +20,10 @@ export const units = {
   enter(f, api) { f.jitter = 0.6; this.apply(f, api.val("match")); },
   layout(f) { this.apply(f, this.v); },
   change(f, id, v) { if (id === "match") this.apply(f, v); },
+  button(f, id) { // keyboard path for the drag: carry the next stray to the nearest unit
+    if (id !== "offer") return; const p = f.points.find(p => p.c < 0 && !p.offered); if (!p) return; p.offered = true;
+    const c = f.clusters.reduce((a, b) => Math.hypot(b.x - p.x, b.y - p.y) < Math.hypot(a.x - p.x, a.y - p.y) ? b : a); p.x = c.x + c.r * 1.25; p.y = c.y; p.lit = 1; this.drag = p; this.up(f);
+  },
   apply(f, v) {
     this.v = v; const K = 7, n7 = Math.floor(f.N * 0.84 / K), r0 = f.R.s * 0.12, S = spots(f, K);
     const groups = v < 0.17 ? [[0, 1, 2, 3], [4, 5, 6]] : v < 0.36 ? [[0, 1, 2], [3, 4], [5, 6]] : S.map((_, i) => [i]);
@@ -137,10 +141,9 @@ export const words = {
   draw(f, g, st) {
     const a1 = smooth(1.6, 2.6, st), a2 = smooth(4, 5.5, st), a3 = smooth(7, 8.5, st), R = f.R;
     f.clusters.forEach(c => { if (a1 > 0.05) f.tag("w" + c.k, c.word, c.x, c.y + c.r * 0.5 + 24, ""); });
-    g.lineWidth = 1.4; g.shadowColor = rgba(COOL, 0.8);
-    this.g.forEach((o, i) => { if (a2 < 0.02) return; g.shadowBlur = 8; circle(g, o.x, o.y, lerp(o.r * 1.5, o.r, a2)); g.strokeStyle = rgba(COOL, a2 * 0.75); g.stroke(); if (a2 > 0.5) f.tag("o" + i, OVER[i], o.x, o.y - o.r - 16, "big"); });
-    if (a3 > 0.02) { g.beginPath(); g.ellipse(R.cx, this.g[0].y - 8, R.w * 0.47, this.g[0].r * 1.75, 0, 0, 6.2832); g.strokeStyle = rgba(COOL, a3 * 0.5); g.stroke(); if (a3 > 0.5) f.tag("top", "things in the house", R.cx, this.g[0].y - this.g[0].r * 1.75 - 24, "big"); }
-    g.shadowBlur = 0;
+    
+    this.g.forEach((o, i) => { if (a2 < 0.02) return; circle(g, o.x, o.y, lerp(o.r * 1.5, o.r, a2)); glowStroke(g, COOL, a2 * 0.75, 1.4); if (a2 > 0.5) f.tag("o" + i, OVER[i], o.x, o.y - o.r - 16, "big"); });
+    if (a3 > 0.02) { g.beginPath(); g.ellipse(R.cx, this.g[0].y - 8, R.w * 0.47, this.g[0].r * 1.75, 0, 0, 6.2832); glowStroke(g, COOL, a3 * 0.5, 1.4); if (a3 > 0.5) f.tag("top", "things in the house", R.cx, this.g[0].y - this.g[0].r * 1.75 - 24, "big"); }
     f.api.readout(a2 < 0.5 ? "Units receive words" : a3 < 0.5 ? "Words cluster into a second layer" : "Clusters nest");
   },
 };

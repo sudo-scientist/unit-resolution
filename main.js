@@ -94,7 +94,7 @@ function pick() {
 }
 function go(n) {
   current = n; const s = STAGES[n];
-  const showMelt = n >= MELT_FROM && s.id !== "sandbox";
+  const showMelt = n >= MELT_FROM && !!SCENES[s.id]?.melt;   // shown wherever it has something to act on
   meltWrap.hidden = !showMelt; dock.hidden = false; readout.innerHTML = "";
   [...list.querySelectorAll("a")].forEach((a, i) => a.classList.toggle("on", i === n));
   toggle.textContent = n === 0 ? "Stages" : `${String(n + 1).padStart(2, "0")} / ${STAGES.length}` + (field.phone ? "" : ` · ${s.title}`);

@@ -1,5 +1,5 @@
 // Act III — when minds meet. Also the shared wall and packets reused in Act IV.
-import { WARM, COOL, PALE, rgba, lerp, clamp, smooth, rnd } from "./field.js";
+import { WARM, COOL, PALE, rgba, lerp, clamp, smooth, rnd, glowStroke } from "./field.js";
 import { circle } from "./scenes-1.js";
 
 // ----- the shared layer: a wall of hardened, default-shaped slots -----
@@ -8,14 +8,14 @@ export function makeWall(f, count, h, x = f.R.cx) {
   return { x, slots, top: R.y, bottom: R.y + R.h };
 }
 export function drawWall(f, g, wall, color = COOL) {
-  g.save(); g.strokeStyle = rgba(color, 0.9); g.lineWidth = 2; g.shadowColor = rgba(color, 0.9); g.shadowBlur = 9;
+  g.save();
   let y = wall.top; g.beginPath();
   for (const s of [...wall.slots].sort((a, b) => a.y - b.y)) {
     g.moveTo(wall.x, y); g.lineTo(wall.x, s.y - s.h / 2);
     for (const e of [-1, 1]) { g.moveTo(wall.x - 9, s.y + e * s.h / 2); g.lineTo(wall.x + 9, s.y + e * s.h / 2); }
     y = s.y + s.h / 2;
   }
-  g.moveTo(wall.x, y); g.lineTo(wall.x, wall.bottom); g.stroke(); g.restore();
+  g.moveTo(wall.x, y); g.lineTo(wall.x, wall.bottom); glowStroke(g, color, 0.9, 2); g.restore();
 }
 // a packet of material: `pts` are unit-disk offsets; kind "open" is loose and detailed, "set" is one compact node
 export function makePacket(seed, n, o) {
@@ -49,20 +49,21 @@ export function twoMinds(f, ha = 0.14, hb = 0.95, gap = 0.5) {
   const R = f.R, r = Math.min(R.w * (0.25 - gap * 0.08), R.h * 0.42), ax = R.x + r + 2, bx = R.x + R.w - r - 2, n = Math.floor(f.N * 0.42 / 4);
   f.minds = [{ x: ax, y: R.cy, r, a: 0.14 }, { x: bx, y: R.cy, r, a: 0.14 }];
   const off = [[0, -0.5], [-0.5, 0.05], [0.42, 0.1], [-0.05, 0.58]];
-  f.setClusters([...off.map(o => ({ x: ax + o[0] * r, y: R.cy + o[1] * r, r: r * 0.27, n, hard: ha, mind: 0 })), ...off.map(o => ({ x: bx - o[0] * r, y: R.cy + o[1] * r, r: r * 0.27, n, hard: hb, mind: 1 }))], 0);
+  f.setClusters([...off.map(o => ({ x: ax + o[0] * r, y: R.cy + o[1] * r, r: r * 0.25, n, hard: ha, mind: 0 })), ...off.map(o => ({ x: bx - o[0] * r, y: R.cy + o[1] * r, r: r * 0.25, n, hard: hb, mind: 1 }))], 0);
   return { ax, bx, r };
 }
 
 export const gap = {
-  enter(f) { f.jitter = 0.8; this.pk = []; this.cost = 0; this.last = -9; this.k = 0; this.layout(f); },
+  enter(f, api) { f.jitter = 0.8; this.pk = []; this.cost = 0; this.last = -9; this.k = 0; if (api.melt > 0.3) api.setMelt(0.15); this.layout(f); },
+  melt(f, v) { f.setMelt(lerp(0.06, 1, v), 0); },
   layout(f) {
-    this.g = twoMinds(f); const pr = this.pr = Math.max(16, f.R.s * 0.075);
+    this.g = twoMinds(f, lerp(0.06, 1, f.api.melt)); const pr = this.pr = Math.max(16, f.R.s * 0.075);
     this.wall = makeWall(f, f.phone ? 3 : 5, pr * 0.5);
     if (f.reduced) { this.pk = [0.28, 0.5, 0.74].map((u, i) => ({ ...this.spawn(f, i, "open"), u })).concat([{ ...this.spawn(f, 7, "set"), u: 0.4 }]); this.cost = this.pk.reduce((s, p) => s + (p.u >= 0.5 ? shedOf(p, this.wall) : 0), 0); }
   },
   spawn(f, k, kind) {
     const w = this.wall, slot = k % w.slots.length, a = f.clusters[k % 4], b = f.clusters[4 + (k + 1) % 4], open = kind === "open";
-    return makePacket(k * 50, 34, { kind, r: this.pr, slot, sx: open ? a.x : b.x, sy: open ? a.y : b.y, dx: open ? b.x : a.x, dy: open ? b.y : a.y, t: f.st, dur: open ? 5.2 : 1.7 });
+    return makePacket(k * 50, 34, { kind, r: open ? this.pr * lerp(1, 0.4, smooth(0.4, 1, f.api.melt)) : this.pr, slot, sx: open ? a.x : b.x, sy: open ? a.y : b.y, dx: open ? b.x : a.x, dy: open ? b.y : a.y, t: f.st, dur: open ? 5.2 : 1.7 });
   },
   update(f, dt, st) {
     if (f.reduced) return;
@@ -73,7 +74,7 @@ export const gap = {
   draw(f, g) {
     drawWall(f, g, this.wall); for (const p of this.pk) drawPacket(f, g, p, clamp(p.u), this.wall);
     const { ax, bx, r } = this.g, y = f.R.cy + r + 14;
-    f.tag("a", "keeps more open", ax, y, "warm"); f.tag("b", "sets fast", bx, y, ""); f.tag("w", "shared layer", this.wall.x, f.R.y - 14, "");
+    f.tag("a", f.api.melt < 0.5 ? "keeps more open" : "now setting faster", ax, y, "warm"); f.tag("b", "sets fast", bx, y, ""); f.tag("w", "shared layer", this.wall.x, f.R.y - 14, "");
     f.api.readout(`Translation cost <b>${this.cost}</b> points shed · paid by one side<span class="meter"><i style="width:${clamp(this.cost / 400) * 100}%"></i></span>`);
   },
 };
@@ -94,7 +95,8 @@ function dstShape(i, labelled) { // re-clustered on arrival: a few blunt corners
 }
 export const misreading = {
   enter(f, api) { f.jitter = 0.7; this.msgs = []; this.count = 0; this.labelAt = -1; this.box = api.figure("transcript"); if (this.box) this.box.innerHTML = `<div class="k">Nothing sent yet. Press send.</div>`; this.layout(f); },
-  layout(f) { this.g = twoMinds(f, 0.14, 0.95, 0.7); if (this.labelAt >= 0) this.labelAt = 0; },
+  melt(f, v) { f.setMelt(lerp(0.06, 1, v), 0); },
+  layout(f) { this.g = twoMinds(f, lerp(0.06, 1, Math.min(f.api.melt, 0.2)), 0.95, 0.7); if (this.labelAt >= 0) this.labelAt = 0; },
   button(f, id) {
     if (id !== "send") return; const i = this.count++, labelled = this.labelAt >= 0;
     this.msgs.push({ i, t: f.st, a: srcShape(i), b: dstShape(i, labelled), labelled }); if (this.msgs.length > 2) this.msgs.shift();
@@ -113,7 +115,7 @@ export const misreading = {
       else draw(lerp(x0, x1, e), y0 - Math.sin(e * Math.PI) * sr * 1.3, mo, u < 1 ? 1 : clamp(1 - (st - m.t - 3) / 2.5));
       if (f.reduced) { f.tag("s", "sent", lerp(x0, x1, 0.18), y0 - sr * 2.9, "warm"); f.tag("g", "arrived", lerp(x0, x1, 0.82), y0 - sr * 2.9, ""); }
     }
-    if (on) { const k = f.reduced ? 1 : clamp((st - this.labelAt) * 3); g.save(); g.shadowColor = rgba(COOL, 1); g.shadowBlur = 16 + (1 - k) * 30; circle(g, ax, y0, r * lerp(1.5, 1.08, smooth(0, 1, k))); g.strokeStyle = rgba(COOL, 0.95); g.lineWidth = 3; g.stroke(); g.restore(); f.tag("lab", "“sensitive”", ax, y0 - r * 1.08 - 18, "big"); }
+    if (on) { const k = f.reduced ? 1 : clamp((st - this.labelAt) * 3); circle(g, ax, y0, r * lerp(1.5, 1.08, smooth(0, 1, k))); glowStroke(g, COOL, 0.95, 3, 1.5 + (1 - k) * 2); f.tag("lab", "“sensitive”", ax, y0 - r * 1.08 - 18, "big"); }
     f.tag("a", "Maven", ax, y0 + r * 1.08 + 16, "warm"); f.tag("b", "Shiloh", bx, y0 + r * 1.08 + 16, "");
     f.api.readout(this.count === 0 ? "Press send" : on ? "Every message now arrives as the same shape" : `<b>${this.count}</b> sent · each one re-clustered on arrival`);
   },

@@ -8,6 +8,12 @@ export const mix = (c1, c2, t) => [0, 1, 2].map(i => Math.round(lerp(c1[i], c2[i
 // deterministic pseudo-random so every load shows the same field
 export const rnd = (i, k = 0) => { const x = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
 
+// a soft glow without shadowBlur (which is slow): the same path stroked wide and faint, then thin and bright
+export function glowStroke(g, color, alpha, width, glow = 1) {
+  if (glow > 0.02) { g.lineJoin = "round"; g.strokeStyle = rgba(color, alpha * 0.1 * glow); g.lineWidth = width + 12; g.stroke(); g.strokeStyle = rgba(color, alpha * 0.2 * glow); g.lineWidth = width + 5; g.stroke(); }
+  g.strokeStyle = rgba(color, alpha); g.lineWidth = width; g.stroke();
+}
+
 function sprite(c) {
   const s = document.createElement("canvas"); s.width = s.height = 32;
   const g = s.getContext("2d"), gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
@@ -137,13 +143,13 @@ export class Field {
     this.scene?.update?.(this, dt, this.st);
   }
 
-  membrane(c, color, alpha, width, wobble) {
+  membrane(c, color, alpha, width, wobble, glow = 0) {
     const g = this.ctx, t = this.t; g.beginPath();
     for (let s = 0; s <= 56; s++) {
       const a = s / 56 * 6.2832, r = (c.r + 7) * (1 - 0.5 * c.col) * (1 + wobble * (0.05 * Math.sin(3 * a + t * 0.9 + c.k) + 0.035 * Math.sin(5 * a - t * 0.6 + c.k * 2)));
       const x = c.x + Math.cos(a) * r * (c.sx ?? 1), y = c.y + Math.sin(a) * r; s ? g.lineTo(x, y) : g.moveTo(x, y);
     }
-    g.closePath(); g.strokeStyle = rgba(color, alpha); g.lineWidth = width; g.stroke();
+    g.closePath(); glowStroke(g, color, alpha, width, glow);
   }
 
   draw() {
@@ -162,8 +168,7 @@ export class Field {
     for (const c of this.clusters) {
       if (c.mem < 0.02 || c.hidden) continue;
       const col = c.color || mix(WARM, COOL, smooth(0.35, 0.8, c.hard)), a = (lerp(0.16, 0.85, c.hard) * c.mem + c.flash * 0.5) * (c.vis ?? 1);
-      if (c.hard > 0.5 || c.flash > 0.05) { g.shadowColor = rgba(col, 0.9); g.shadowBlur = 10 * c.hard + 18 * c.flash; }
-      this.membrane(c, col, a, lerp(0.7, 2.1, c.hard) + c.flash * 2, 1 - c.hard); g.shadowBlur = 0;
+      this.membrane(c, col, a, lerp(0.7, 2.1, c.hard) + c.flash * 2, 1 - c.hard, smooth(0.45, 0.9, c.hard) + c.flash);
     }
     for (const p of this.points) {
       const c = p.c >= 0 ? this.clusters[p.c] : null, a = p.al * (c ? (1 - c.col * 0.97) * (c.vis ?? 1) : 1) * (c?.hidden ? 0 : 1); if (a < 0.02 && p.lit < 0.02) continue;

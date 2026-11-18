@@ -23,7 +23,7 @@ export const STAGES = [
     ],
     aside: "Technical readers will know this problem as entity resolution.",
     hint: "Drag a stray point toward a unit.",
-    controls: [{ type: "range", id: "match", label: "Match threshold", ends: ["loose", "strict"], value: 50 }],
+    controls: [{ type: "range", id: "match", label: "Match threshold", ends: ["loose", "strict"], value: 50 }, { type: "button", id: "offer", label: "Offer a stray point" }],
   },
   {
     id: "priors", act: "I", title: "Priors",
@@ -82,7 +82,7 @@ export const STAGES = [
       "Some people live fluently inside the shared units and can still see them as units. A comedian takes an audience across a boundary to look back at it, then brings them home.",
     ],
     hint: "Click a unit to go up. Click again to go down.",
-    controls: [{ type: "button", id: "stepout", label: "Step outside and look back" }],
+    controls: [{ type: "button", id: "updown", label: "Take a unit up or down" }, { type: "button", id: "stepout", label: "Step outside and look back" }],
   },
   {
     id: "ceiling", act: "II", title: "The ceiling",
@@ -90,7 +90,8 @@ export const STAGES = [
       "Staying open has a cost. Past a point, the bottleneck is holding connections, and seeing them is easy.",
       "Touch one thought and twenty others light up. Nothing settles enough to be set down.",
     ],
-    hint: "Touch a point. Then move the slider and touch again.",
+    hint: "Touch a unit. Then move the slider and touch again.",
+    controls: [{ type: "toggle", id: "touch", label: "Touch a thought" }],
   },
   {
     id: "gap", act: "III", title: "The gap",
