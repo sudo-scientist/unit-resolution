@@ -319,6 +319,7 @@
   var u = 0, e = 0;                                  // how far toward each end of the slider
   var X, Y, light, tile, hold, open, grow, scale, paint, bucket, w, wAlpha, mul;
   var glowSprite = [], bloomSprite = null;
+  var sharpCap = 2, slowFrames = 0, slowTime = 0;
   var paintStale = true, weightStale = true;
 
   function makeSprites() {
@@ -345,7 +346,7 @@
 
   function layout() {
     vw = window.innerWidth; vh = window.innerHeight;
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    dpr = Math.min(window.devicePixelRatio || 1, sharpCap);
     canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
     var side = Math.max(16, vw * 0.035), top = Math.max(16, vh * 0.035);
     var floor = fieldFloor();
@@ -781,7 +782,9 @@
 
     // Where every dot is right now.
     var amp = calm ? 0 : net.gap * 0.085;
-    for (g = 0; g < net.k; g++) scale[g] = lerp(lerp(1, SQUEEZE, u), 1.08, open[g]);
+    // Dots gather first, so the gaps are already there when outlines arrive.
+    var gather = 1 - Math.pow(1 - u, 2.4);
+    for (g = 0; g < net.k; g++) scale[g] = lerp(lerp(1, SQUEEZE, gather), 1.08, open[g]);
     for (i = 0; i < n; i++) {
       g = net.grp[i]; k = scale[g];
       X[i] = fx + net.cx[g] + (net.x[i] - net.cx[g]) * k + amp * Math.sin(now * net.f1[i] + net.p1[i]);
@@ -795,15 +798,17 @@
       k = scale[g];
       ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * (fx + net.cx[g]), dpr * (fy + net.cy[g]));
       ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = a * (0.34 + 0.6 * Math.min(1, tile[g]));
+      var lift = Math.min(1, tile[g]);
+      ctx.globalAlpha = Math.pow(a, 1.3) * (0.34 + 0.6 * lift);
       ctx.fillStyle = net.flatPaint[g];
-      ctx.fill(net.edge[g]);
-      if (tile[g] > 0.01) {
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.strokeStyle = net.flatPaint[g];
-        ctx.globalAlpha = a * 0.07 * Math.min(1, tile[g]); ctx.lineWidth = 44 / k; ctx.stroke(net.edge[g]);
-        ctx.globalAlpha = a * 0.12 * Math.min(1, tile[g]); ctx.lineWidth = 18 / k; ctx.stroke(net.edge[g]);
+      if (lift > 0.01) {
+        // A lit tile blooms a little past its own outline.
+        ctx.shadowColor = net.flatPaint[g];
+        ctx.shadowBlur = 46 * dpr * lift;
       }
+      ctx.fill(net.edge[g]);
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalCompositeOperation = 'lighter';
@@ -855,7 +860,7 @@
       ctx.globalAlpha = Math.min(1, (0.2 + 0.45 * open[g] + 0.8 * b) * fade);
       ctx.drawImage(glowSprite[bucket[i]], X[i] - hs, Y[i] - hs, hs * 2, hs * 2);
       if (b > 0.02) {
-        hs = r * (5 + 13 * b);
+        hs = r * (6 + 19 * b);
         ctx.globalAlpha = b * fade;
         ctx.drawImage(bloomSprite, X[i] - hs, Y[i] - hs, hs * 2, hs * 2);
       }
@@ -873,14 +878,14 @@
     var soft = 1 - u;
     for (g = 0; g < net.k; g++) {
       var lit = Math.min(1, tile[g]);
-      a = (1 - open[g]) * (Math.pow(u, 1.4) * (0.5 + 0.5 * lit) + 0.5 * lit * Math.sqrt(u) * soft);
+      a = (1 - open[g]) * (Math.pow(u, 2) * (0.5 + 0.5 * lit) + 0.6 * lit * Math.sqrt(u) * soft);
       if (a < 0.004) continue;
       k = scale[g];
       ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * (fx + net.cx[g]), dpr * (fy + net.cy[g]));
       ctx.strokeStyle = net.edgePaint[g];
       if (soft > 0.02) {
-        ctx.globalAlpha = a * 0.18; ctx.lineWidth = (1.5 + 26 * soft) / k; ctx.stroke(net.edge[g]);
-        ctx.globalAlpha = a * 0.35; ctx.lineWidth = (1.5 + 10 * soft) / k; ctx.stroke(net.edge[g]);
+        ctx.globalAlpha = a * 0.16; ctx.lineWidth = (1.5 + 15 * soft) / k; ctx.stroke(net.edge[g]);
+        ctx.globalAlpha = a * 0.32; ctx.lineWidth = (1.5 + 6 * soft) / k; ctx.stroke(net.edge[g]);
       }
       ctx.globalAlpha = Math.min(1, a); ctx.lineWidth = (1.5 + 2 * soft) / k; ctx.stroke(net.edge[g]);
     }
@@ -911,9 +916,22 @@
     now += dt;
     step(dt);
     draw();
+    // If frames run long, draw fewer pixels rather than drop below a smooth rate.
+    if (dt > 0) {
+      slowTime += (ms - (frame.prev || ms)); slowFrames++;
+      if (slowFrames >= 45) {
+        if (slowTime / slowFrames > 23 && dpr > 1) {
+          sharpCap = Math.max(1, dpr - 0.5);
+          dpr = sharpCap;
+          canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
+        }
+        slowFrames = 0; slowTime = 0;
+      }
+    }
+    frame.prev = ms;
   }
   function run() { if (!raf && net && !document.hidden && !field.hidden) { last = 0; raf = requestAnimationFrame(frame); } }
-  function rest() { if (raf) cancelAnimationFrame(raf); raf = 0; }
+  function rest() { if (raf) cancelAnimationFrame(raf); raf = 0; frame.prev = 0; slowFrames = 0; slowTime = 0; }
 
   document.addEventListener('visibilitychange', function () { if (document.hidden) rest(); else run(); });
 
